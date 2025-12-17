@@ -4,6 +4,7 @@
 name = "lof-premium-calculator"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
+minify = true
 
 # 定时任务: 每小时执行一次
 [triggers]
