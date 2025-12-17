@@ -26,7 +26,15 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Deploy to Cloudflare Workers
+        id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Warm up cache
+        run: |
+          sleep 5
+          curl -s "${{ steps.deploy.outputs.deployment-url }}/calculate?top=100" | head -c 200
+          echo ""
+          echo "Cache warmed up successfully"
