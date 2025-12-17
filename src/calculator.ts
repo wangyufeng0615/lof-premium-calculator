@@ -81,7 +81,9 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
 
   // 2. 批量获取净值
   const codes = funds.map(f => f.code);
-  const navMap = await fetchFundNavBatch(codes, 20);
+  const navMap = await fetchFundNavBatch(codes, 10);  // 减小批量大小
+
+  console.log(`净值获取完成: ${navMap.size}/${codes.length}`);
 
   // 3. 确定数据日期（最常见的净值日期）
   const navDates: string[] = [];
@@ -92,7 +94,7 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
 
   // 4. 批量获取历史收盘价（使用净值日期，限制并发数）
   const priceMap = new Map<string, number>();
-  const BATCH_SIZE = 20;
+  const BATCH_SIZE = 10;  // 减小批量大小
   for (let i = 0; i < codes.length; i += BATCH_SIZE) {
     const batch = codes.slice(i, i + BATCH_SIZE);
     const prices = await Promise.all(
@@ -103,7 +105,13 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
         priceMap.set(code, prices[j]!);
       }
     });
+    // 添加小延迟避免限流
+    if (i + BATCH_SIZE < codes.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
   }
+
+  console.log(`价格获取完成: ${priceMap.size}/${codes.length}`);
 
   // 5. 计算溢价率（使用同一天的市价和净值）
   const fundsWithPremium: FundWithPremium[] = [];

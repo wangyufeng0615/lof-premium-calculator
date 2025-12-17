@@ -214,6 +214,11 @@ export async function fetchFundNavBatch(
         results.set(code, nav);
       }
     }
+
+    // 添加小延迟避免限流
+    if (i + concurrency < codes.length) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
   }
 
   return results;
