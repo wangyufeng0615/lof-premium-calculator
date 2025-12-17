@@ -89,7 +89,14 @@ export async function fetchLOFList(): Promise<Fund[]> {
     throw new Error('获取 LOF 列表失败');
   }
 
-  const allRecords = [...firstData.data.diff];
+  // diff 可能是对象或数组，统一转为数组
+  const toArray = (diff: unknown): Record<string, unknown>[] => {
+    if (Array.isArray(diff)) return diff;
+    if (diff && typeof diff === 'object') return Object.values(diff);
+    return [];
+  };
+
+  const allRecords = toArray(firstData.data.diff);
   const total = firstData.data.total;
   const totalPages = Math.ceil(total / 100);
 
@@ -103,9 +110,9 @@ export async function fetchLOFList(): Promise<Fund[]> {
 
   const responses = await Promise.all(promises);
   for (const res of responses) {
-    const data = await res.json() as { data: { diff: Record<string, unknown>[] } };
+    const data = await res.json() as { data: { diff: unknown } };
     if (data.data?.diff) {
-      allRecords.push(...data.data.diff);
+      allRecords.push(...toArray(data.data.diff));
     }
   }
 
