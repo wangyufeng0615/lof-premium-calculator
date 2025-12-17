@@ -23,7 +23,7 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
 
   // 确定交易所前缀 (深圳1开头用0，上海5开头用1)
   const prefix = code.startsWith('5') ? '1' : '0';
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${code}&fields1=f1&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=30`;
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${code}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=30`;
 
   try {
     const res = await fetch(url, {
