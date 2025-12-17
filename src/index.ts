@@ -14,6 +14,7 @@
 import type { Env, CachedData, CalculationResult } from './types';
 import { calculate, formatReport } from './calculator';
 import { HTML_PAGE } from './frontend';
+import { fetchLOFList, fetchFundNav, fetchHistoricalPrice } from './fetcher';
 
 const CACHE_KEY = 'lof-premium-data';
 const CACHE_TTL_HOURS = 24;
@@ -97,6 +98,10 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
   if (path === '/debug') {
     return handleDebug(corsHeaders);
+  }
+
+  if (path === '/debug2') {
+    return handleDebug2(corsHeaders);
   }
 
   return new Response(JSON.stringify({ error: 'Not Found' }), {
@@ -306,6 +311,58 @@ async function handleDebug(headers: Record<string, string>): Promise<Response> {
     };
   } catch (e) {
     results.priceApi = { error: String(e) };
+  }
+
+  return new Response(JSON.stringify(results, null, 2), {
+    headers: { ...headers, 'Content-Type': 'application/json' },
+  });
+}
+
+/**
+ * GET /debug2 - 调试计算流程
+ */
+async function handleDebug2(headers: Record<string, string>): Promise<Response> {
+  const results: Record<string, unknown> = {};
+
+  try {
+    // 1. 获取基金列表
+    const funds = await fetchLOFList();
+    results.step1_funds = {
+      count: funds.length,
+      sample: funds.slice(0, 3),
+    };
+
+    // 2. 获取单个基金净值
+    const testCode = '161226';
+    const nav = await fetchFundNav(testCode);
+    results.step2_nav = {
+      code: testCode,
+      nav,
+    };
+
+    // 3. 获取历史价格
+    const dataDate = nav?.navDate || '2025-12-16';
+    const price = await fetchHistoricalPrice(testCode, dataDate);
+    results.step3_price = {
+      code: testCode,
+      date: dataDate,
+      price,
+    };
+
+    // 4. 测试多个基金的净值获取
+    const testCodes = funds.slice(0, 5).map(f => f.code);
+    const navResults: Record<string, unknown> = {};
+    for (const code of testCodes) {
+      try {
+        navResults[code] = await fetchFundNav(code);
+      } catch (e) {
+        navResults[code] = { error: String(e) };
+      }
+    }
+    results.step4_multiNav = navResults;
+
+  } catch (e) {
+    results.error = String(e);
   }
 
   return new Response(JSON.stringify(results, null, 2), {
