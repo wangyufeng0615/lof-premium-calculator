@@ -341,11 +341,11 @@ async function handleDebug2(headers: Record<string, string>): Promise<Response> 
     };
 
     // 3. 获取历史价格
-    const dataDate = nav?.navDate || '2025-12-16';
-    const price = await fetchHistoricalPrice(testCode, dataDate);
+    const navDate = nav?.navDate || '2025-12-16';
+    const price = await fetchHistoricalPrice(testCode, navDate);
     results.step3_price = {
       code: testCode,
-      date: dataDate,
+      date: navDate,
       price,
     };
 
