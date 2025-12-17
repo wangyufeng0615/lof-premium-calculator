@@ -90,15 +90,20 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
   }
   const dataDate = mostCommon(navDates) || '';
 
-  // 4. 批量获取历史收盘价（使用净值日期）
-  const pricePromises = codes.map(code => fetchHistoricalPrice(code, dataDate));
-  const prices = await Promise.all(pricePromises);
+  // 4. 批量获取历史收盘价（使用净值日期，限制并发数）
   const priceMap = new Map<string, number>();
-  codes.forEach((code, i) => {
-    if (prices[i] !== null) {
-      priceMap.set(code, prices[i]!);
-    }
-  });
+  const BATCH_SIZE = 20;
+  for (let i = 0; i < codes.length; i += BATCH_SIZE) {
+    const batch = codes.slice(i, i + BATCH_SIZE);
+    const prices = await Promise.all(
+      batch.map(code => fetchHistoricalPrice(code, dataDate))
+    );
+    batch.forEach((code, j) => {
+      if (prices[j] !== null) {
+        priceMap.set(code, prices[j]!);
+      }
+    });
+  }
 
   // 5. 计算溢价率（使用同一天的市价和净值）
   const fundsWithPremium: FundWithPremium[] = [];
