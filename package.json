@@ -1,0 +1,16 @@
+{
+  "name": "lof-premium-calculator",
+  "version": "1.0.0",
+  "description": "LOF基金溢价率计算工具 - Cloudflare Workers",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "wrangler dev --test-scheduled"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.99.0"
+  }
+}

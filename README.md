@@ -1,42 +1,47 @@
 # LOF基金溢价率计算工具
 
-一个用于获取和分析LOF基金溢价率的Python工具。
+基于 Cloudflare Workers 的 LOF 基金溢价率计算服务，内置前端页面。
 
 ## 功能
 
-- 使用akshare获取所有LOF基金的实时溢价率数据
-- 筛选有溢价的基金
-- 支持特别关注基金列表
-- 按溢价率排序显示TOP5基金
+- 计算所有 LOF 基金的实时溢价率
+- 区分基金类型（普通LOF、QDII、商品类）及净值延迟
+- 计算扣除套利成本后的净收益
+- 内置简洁前端页面
+- KV 缓存 + Cron 定时任务，每天 15:30 自动更新
 
-## 安装
-
-```bash
-pip install akshare pandas
-```
-
-## 运行
+## 本地开发
 
 ```bash
-python main.py
+npm install
+npm run dev
+# 访问 http://localhost:8787
 ```
 
 ## 部署
 
-这个代码实现的是coze的插件，代码粘贴到coze上即可使用，具体请参考coze文档。main函数是为了方便本地测试。
+```bash
+# 登录 Cloudflare
+npx wrangler login
 
-## 输出示例
+# 创建 KV 存储
+npx wrangler kv namespace create LOF_CACHE
+npx wrangler kv namespace create LOF_CACHE --preview
 
+# 将返回的 ID 填入 wrangler.toml，然后部署
+npm run deploy
 ```
-📅 计算执行时间：2024-01-01 10:00:00
-📈 有溢价基金：25 只，数据成功率：120/125 (96.0%)
-📅 溢价率所代表的实际日期（T-1）: 2023-12-29
 
-🔥 特别关注:
-   1. 161116 易方达黄金ETF联接A 溢价率: 2.35%
+## 端点
 
-📈 溢价率最高的LOF基金（TOP5）:
-   1. 160723 嘉实原油 溢价率: 5.42%
-   2. 161129 易方达原油A 溢价率: 4.18%
-   3. 161116 易方达黄金ETF联接A 溢价率: 2.35%
-```
+| 路径 | 说明 |
+|------|------|
+| `/` | 前端页面 |
+| `/api` | API 说明 |
+| `/data` | 从缓存获取数据 |
+| `/calculate` | 实时计算（更新缓存） |
+| `/health` | 健康检查 |
+
+## License
+
+MIT

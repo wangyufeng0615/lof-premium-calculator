@@ -1,0 +1,22 @@
+# Cloudflare Workers 配置
+# 文档: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "lof-premium-calculator"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# 定时任务: 每小时执行一次
+[triggers]
+crons = ["0 * * * *"]
+
+# KV 存储绑定
+# 部署前需要先创建 KV namespace:
+#   npx wrangler kv namespace create LOF_CACHE
+# 然后将返回的 id 填入下方
+[[kv_namespaces]]
+binding = "LOF_CACHE"
+id = "5ad4794049a740a2ada3e22209295b26"
+
+# 环境变量
+[vars]
+ENVIRONMENT = "production"
