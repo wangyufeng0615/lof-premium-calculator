@@ -14,7 +14,7 @@
 import type { Env, CachedData, CalculationResult } from './types';
 import { calculate, formatReport } from './calculator';
 import { HTML_PAGE } from './frontend';
-import { fetchLOFList, fetchFundNav, fetchHistoricalPrice } from './fetcher';
+import { fetchLOFList, fetchFundNav, fetchFundNavBatch, fetchHistoricalPrice } from './fetcher';
 
 const CACHE_KEY = 'lof-premium-data';
 const CACHE_TTL_HOURS = 24;
@@ -349,17 +349,41 @@ async function handleDebug2(headers: Record<string, string>): Promise<Response> 
       price,
     };
 
-    // 4. 测试多个基金的净值获取
-    const testCodes = funds.slice(0, 5).map(f => f.code);
-    const navResults: Record<string, unknown> = {};
-    for (const code of testCodes) {
-      try {
-        navResults[code] = await fetchFundNav(code);
-      } catch (e) {
-        navResults[code] = { error: String(e) };
-      }
+    // 4. 测试批量净值获取
+    const testCodes = funds.slice(0, 10).map(f => f.code);
+    const navMap = await fetchFundNavBatch(testCodes, 5);
+    results.step4_batchNav = {
+      requested: testCodes.length,
+      received: navMap.size,
+      codes: Array.from(navMap.keys()),
+      sample: Array.from(navMap.entries()).slice(0, 3).map(([code, nav]) => ({ code, ...nav })),
+    };
+
+    // 5. 测试批量历史价格获取
+    const dataDate = '2025-12-16';
+    const priceResults: Record<string, number | null> = {};
+    for (const code of testCodes.slice(0, 5)) {
+      priceResults[code] = await fetchHistoricalPrice(code, dataDate);
     }
-    results.step4_multiNav = navResults;
+    results.step5_batchPrice = {
+      date: dataDate,
+      prices: priceResults,
+    };
+
+    // 6. 测试匹配
+    let matched = 0;
+    let noNav = 0;
+    let noPrice = 0;
+    let dateMismatch = 0;
+    for (const code of testCodes) {
+      const nav = navMap.get(code);
+      const price = priceResults[code];
+      if (!nav) { noNav++; continue; }
+      if (!price) { noPrice++; continue; }
+      if (nav.navDate !== dataDate) { dateMismatch++; continue; }
+      matched++;
+    }
+    results.step6_matching = { matched, noNav, noPrice, dateMismatch };
 
   } catch (e) {
     results.error = String(e);
