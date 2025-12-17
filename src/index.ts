@@ -185,15 +185,17 @@ async function handleData(
   const topN = parseInt(url.searchParams.get('top') || '20', 10);
   const format = url.searchParams.get('format') || 'json';
 
-  const cached = await getCachedData(env);
+  let cached = await getCachedData(env);
 
+  // 无缓存时自动触发计算
   if (!cached) {
-    return new Response(JSON.stringify({
-      error: '缓存为空，请先调用 /calculate 或等待定时任务执行',
-    }), {
-      status: 404,
-      headers: { ...headers, 'Content-Type': 'application/json; charset=utf-8' },
-    });
+    const result = await calculate(100);
+    await setCachedData(env, result);
+    cached = {
+      result,
+      cachedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    };
   }
 
   const result = cached.result;
