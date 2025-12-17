@@ -95,6 +95,10 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     return handleHealth(corsHeaders);
   }
 
+  if (path === '/debug') {
+    return handleDebug(corsHeaders);
+  }
+
   return new Response(JSON.stringify({ error: 'Not Found' }), {
     status: 404,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -233,6 +237,55 @@ function handleHealth(headers: Record<string, string>): Response {
     status: 'ok',
     time: new Date().toISOString(),
   }), {
+    headers: { ...headers, 'Content-Type': 'application/json' },
+  });
+}
+
+/**
+ * GET /debug - 调试 API 调用
+ */
+async function handleDebug(headers: Record<string, string>): Promise<Response> {
+  const results: Record<string, unknown> = {};
+
+  // 测试历史价格 API
+  const priceUrl = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.161226&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=3';
+  try {
+    const res = await fetch(priceUrl);
+    results.priceApi = {
+      status: res.status,
+      data: await res.json(),
+    };
+  } catch (e) {
+    results.priceApi = { error: String(e) };
+  }
+
+  // 测试 LOF 列表 API
+  const listUrl = 'https://88.push2.eastmoney.com/api/qt/clist/get?pn=1&pz=3&fs=b:MK0404&fields=f12,f14,f2,f3';
+  try {
+    const res = await fetch(listUrl);
+    results.listApi = {
+      status: res.status,
+      data: await res.json(),
+    };
+  } catch (e) {
+    results.listApi = { error: String(e) };
+  }
+
+  // 测试净值 API
+  const navUrl = 'https://fund.eastmoney.com/pingzhongdata/161226.js';
+  try {
+    const res = await fetch(navUrl);
+    const text = await res.text();
+    results.navApi = {
+      status: res.status,
+      length: text.length,
+      sample: text.substring(0, 200),
+    };
+  } catch (e) {
+    results.navApi = { error: String(e) };
+  }
+
+  return new Response(JSON.stringify(results, null, 2), {
     headers: { ...headers, 'Content-Type': 'application/json' },
   });
 }
