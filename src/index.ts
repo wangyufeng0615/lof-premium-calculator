@@ -247,42 +247,65 @@ function handleHealth(headers: Record<string, string>): Response {
 async function handleDebug(headers: Record<string, string>): Promise<Response> {
   const results: Record<string, unknown> = {};
 
-  // 测试历史价格 API
-  const priceUrl = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.161226&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=3';
-  try {
-    const res = await fetch(priceUrl);
-    results.priceApi = {
-      status: res.status,
-      data: await res.json(),
-    };
-  } catch (e) {
-    results.priceApi = { error: String(e) };
-  }
-
-  // 测试 LOF 列表 API
-  const listUrl = 'https://88.push2.eastmoney.com/api/qt/clist/get?pn=1&pz=3&fs=b:MK0404&fields=f12,f14,f2,f3';
+  // 测试 LOF 列表 API 并解析
+  const listUrl = 'https://88.push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=b:MK0404,b:MK0405,b:MK0406,b:MK0407&fields=f12,f14,f2,f3';
   try {
     const res = await fetch(listUrl);
+    const data = await res.json() as { data?: { diff?: unknown; total?: number } };
+    const diff = data.data?.diff;
+
+    // 检查 diff 类型
+    const diffType = Array.isArray(diff) ? 'array' : typeof diff;
+    const diffKeys = diff && typeof diff === 'object' ? Object.keys(diff).slice(0, 5) : [];
+    const diffValues = diff && typeof diff === 'object' && !Array.isArray(diff)
+      ? Object.values(diff).slice(0, 2)
+      : Array.isArray(diff) ? diff.slice(0, 2) : [];
+
     results.listApi = {
       status: res.status,
-      data: await res.json(),
+      total: data.data?.total,
+      diffType,
+      diffKeys,
+      diffValues,
     };
   } catch (e) {
     results.listApi = { error: String(e) };
   }
 
-  // 测试净值 API
+  // 测试净值解析
   const navUrl = 'https://fund.eastmoney.com/pingzhongdata/161226.js';
   try {
     const res = await fetch(navUrl);
     const text = await res.text();
-    results.navApi = {
-      status: res.status,
-      length: text.length,
-      sample: text.substring(0, 200),
-    };
+    const match = text.match(/var Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
+    if (match) {
+      const data = JSON.parse(match[1]) as Array<{ x: number; y: number }>;
+      const latest = data[data.length - 1];
+      const date = new Date(latest.x + 8 * 60 * 60 * 1000);
+      results.navApi = {
+        status: res.status,
+        dataLength: data.length,
+        latest: latest,
+        parsedDate: date.toISOString().split('T')[0],
+      };
+    } else {
+      results.navApi = { status: res.status, error: 'regex not matched', sample: text.substring(0, 300) };
+    }
   } catch (e) {
     results.navApi = { error: String(e) };
+  }
+
+  // 测试历史价格解析
+  const priceUrl = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.161226&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=5';
+  try {
+    const res = await fetch(priceUrl);
+    const data = await res.json() as { data?: { klines?: string[] } };
+    results.priceApi = {
+      status: res.status,
+      klines: data.data?.klines,
+    };
+  } catch (e) {
+    results.priceApi = { error: String(e) };
   }
 
   return new Response(JSON.stringify(results, null, 2), {
