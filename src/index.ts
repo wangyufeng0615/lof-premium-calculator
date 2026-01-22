@@ -13,8 +13,11 @@
 
 import type { Env, CachedData, CalculationResult } from './types';
 import { calculate, formatReport } from './calculator';
-import { HTML_PAGE } from './frontend';
-import { fetchLOFList, fetchFundNav, fetchFundNavBatch, fetchHistoricalPrice } from './fetcher';
+import { HTML_PAGE, ADMIN_PAGE } from './frontend';
+
+// 管理页面路径（复杂URL起保护作用）
+const ADMIN_PATH = '/lof-admin-x7k9m2p4';
+import { getProgress, startBatchCalculation, processNextBatch, resetProgress } from './batch-calculator';
 
 const CACHE_KEY = 'lof-premium-data';
 const CACHE_TTL_HOURS = 24;
@@ -96,12 +99,25 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     return handleHealth(corsHeaders);
   }
 
-  if (path === '/debug') {
-    return handleDebug(corsHeaders);
+  if (path === ADMIN_PATH) {
+    return handleAdmin(corsHeaders);
   }
 
-  if (path === '/debug2') {
-    return handleDebug2(corsHeaders);
+  // 批量计算 API
+  if (path === '/batch/start') {
+    return handleBatchStart(env, corsHeaders);
+  }
+
+  if (path === '/batch/next') {
+    return handleBatchNext(env, corsHeaders);
+  }
+
+  if (path === '/batch/progress') {
+    return handleBatchProgress(env, corsHeaders);
+  }
+
+  if (path === '/batch/reset') {
+    return handleBatchReset(env, corsHeaders);
   }
 
   return new Response(JSON.stringify({ error: 'Not Found' }), {
@@ -247,149 +263,64 @@ function handleHealth(headers: Record<string, string>): Response {
 }
 
 /**
- * GET /debug - 调试 API 调用
+ * GET /lof-admin-xxx - 管理页面
  */
-async function handleDebug(headers: Record<string, string>): Promise<Response> {
-  const results: Record<string, unknown> = {};
+function handleAdmin(headers: Record<string, string>): Response {
+  return new Response(ADMIN_PAGE, {
+    headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
 
-  // 测试 LOF 列表 API 并解析
-  const listUrl = 'https://88.push2.eastmoney.com/api/qt/clist/get?pn=1&pz=5&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=b:MK0404,b:MK0405,b:MK0406,b:MK0407&fields=f12,f14,f2,f3';
+/**
+ * POST /batch/start - 开始批量计算
+ */
+async function handleBatchStart(env: Env, headers: Record<string, string>): Promise<Response> {
   try {
-    const res = await fetch(listUrl);
-    const data = await res.json() as { data?: { diff?: unknown; total?: number } };
-    const diff = data.data?.diff;
-
-    // 检查 diff 类型
-    const diffType = Array.isArray(diff) ? 'array' : typeof diff;
-    const diffKeys = diff && typeof diff === 'object' ? Object.keys(diff).slice(0, 5) : [];
-    const diffValues = diff && typeof diff === 'object' && !Array.isArray(diff)
-      ? Object.values(diff).slice(0, 2)
-      : Array.isArray(diff) ? diff.slice(0, 2) : [];
-
-    results.listApi = {
-      status: res.status,
-      total: data.data?.total,
-      diffType,
-      diffKeys,
-      diffValues,
-    };
+    const progress = await startBatchCalculation(env);
+    return new Response(JSON.stringify(progress), {
+      headers: { ...headers, 'Content-Type': 'application/json' },
+    });
   } catch (e) {
-    results.listApi = { error: String(e) };
+    return new Response(JSON.stringify({ error: String(e) }), {
+      status: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+    });
   }
+}
 
-  // 测试净值解析
-  const navUrl = 'https://fund.eastmoney.com/pingzhongdata/161226.js';
+/**
+ * POST /batch/next - 处理下一批
+ */
+async function handleBatchNext(env: Env, headers: Record<string, string>): Promise<Response> {
   try {
-    const res = await fetch(navUrl);
-    const text = await res.text();
-    const match = text.match(/var Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
-    if (match) {
-      const data = JSON.parse(match[1]) as Array<{ x: number; y: number }>;
-      const latest = data[data.length - 1];
-      const date = new Date(latest.x + 8 * 60 * 60 * 1000);
-      results.navApi = {
-        status: res.status,
-        dataLength: data.length,
-        latest: latest,
-        parsedDate: date.toISOString().split('T')[0],
-      };
-    } else {
-      results.navApi = { status: res.status, error: 'regex not matched', sample: text.substring(0, 300) };
-    }
+    const progress = await processNextBatch(env);
+    return new Response(JSON.stringify(progress), {
+      headers: { ...headers, 'Content-Type': 'application/json' },
+    });
   } catch (e) {
-    results.navApi = { error: String(e) };
+    return new Response(JSON.stringify({ error: String(e) }), {
+      status: 500,
+      headers: { ...headers, 'Content-Type': 'application/json' },
+    });
   }
+}
 
-  // 测试历史价格解析
-  const priceUrl = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=0.161226&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=5';
-  try {
-    const res = await fetch(priceUrl);
-    const data = await res.json() as { data?: { klines?: string[] } };
-    results.priceApi = {
-      status: res.status,
-      klines: data.data?.klines,
-    };
-  } catch (e) {
-    results.priceApi = { error: String(e) };
-  }
-
-  return new Response(JSON.stringify(results, null, 2), {
+/**
+ * GET /batch/progress - 获取进度
+ */
+async function handleBatchProgress(env: Env, headers: Record<string, string>): Promise<Response> {
+  const progress = await getProgress(env);
+  return new Response(JSON.stringify(progress), {
     headers: { ...headers, 'Content-Type': 'application/json' },
   });
 }
 
 /**
- * GET /debug2 - 调试计算流程
+ * POST /batch/reset - 重置进度
  */
-async function handleDebug2(headers: Record<string, string>): Promise<Response> {
-  const results: Record<string, unknown> = {};
-
-  try {
-    // 1. 获取基金列表
-    const funds = await fetchLOFList();
-    results.step1_funds = {
-      count: funds.length,
-      sample: funds.slice(0, 3),
-    };
-
-    // 2. 获取单个基金净值
-    const testCode = '161226';
-    const nav = await fetchFundNav(testCode);
-    results.step2_nav = {
-      code: testCode,
-      nav,
-    };
-
-    // 3. 获取历史价格
-    const navDate = nav?.navDate || '2025-12-16';
-    const price = await fetchHistoricalPrice(testCode, navDate);
-    results.step3_price = {
-      code: testCode,
-      date: navDate,
-      price,
-    };
-
-    // 4. 测试批量净值获取
-    const testCodes = funds.slice(0, 10).map(f => f.code);
-    const navMap = await fetchFundNavBatch(testCodes, 5);
-    results.step4_batchNav = {
-      requested: testCodes.length,
-      received: navMap.size,
-      codes: Array.from(navMap.keys()),
-      sample: Array.from(navMap.entries()).slice(0, 3).map(([code, nav]) => ({ code, ...nav })),
-    };
-
-    // 5. 测试批量历史价格获取
-    const dataDate = '2025-12-16';
-    const priceResults: Record<string, number | null> = {};
-    for (const code of testCodes.slice(0, 5)) {
-      priceResults[code] = await fetchHistoricalPrice(code, dataDate);
-    }
-    results.step5_batchPrice = {
-      date: dataDate,
-      prices: priceResults,
-    };
-
-    // 6. 测试匹配
-    let matched = 0;
-    let noNav = 0;
-    let noPrice = 0;
-    let dateMismatch = 0;
-    for (const code of testCodes) {
-      const nav = navMap.get(code);
-      const price = priceResults[code];
-      if (!nav) { noNav++; continue; }
-      if (!price) { noPrice++; continue; }
-      if (nav.navDate !== dataDate) { dateMismatch++; continue; }
-      matched++;
-    }
-    results.step6_matching = { matched, noNav, noPrice, dateMismatch };
-
-  } catch (e) {
-    results.error = String(e);
-  }
-
-  return new Response(JSON.stringify(results, null, 2), {
+async function handleBatchReset(env: Env, headers: Record<string, string>): Promise<Response> {
+  await resetProgress(env);
+  return new Response(JSON.stringify({ status: 'reset' }), {
     headers: { ...headers, 'Content-Type': 'application/json' },
   });
 }

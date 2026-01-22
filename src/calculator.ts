@@ -2,8 +2,8 @@
  * 溢价率计算模块
  */
 
-import type { Fund, FundType, FundWithPremium, CalculationResult } from './types';
-import { fetchLOFList, fetchFundNavBatch, fetchHistoricalPrice } from './fetcher';
+import type { Fund, FundType, FundWithPremium, CalculationResult, DailyPremium } from './types';
+import { fetchLOFList, fetchFundNavBatch, fetchHistoricalPrice, fetchFundNavHistory, fetchHistoricalPrices } from './fetcher';
 
 // 套利成本 (%)
 const PREMIUM_ARBITRAGE_COST = 0.16;   // 溢价套利: 申购+卖出
@@ -77,13 +77,25 @@ function mostCommon<T>(arr: T[]): T | undefined {
  */
 export async function calculate(topN: number = 20): Promise<CalculationResult> {
   // 1. 获取 LOF 列表
-  const funds = await fetchLOFList();
+  const allFunds = await fetchLOFList();
 
-  // 2. 批量获取净值
+  // 2. 筛选可能有套利机会的基金（涨跌幅 > 2% 或 < -2%，优先处理）
+  // 按涨跌幅绝对值排序，优先处理波动大的
+  const sortedFunds = [...allFunds].sort(
+    (a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent)
+  );
+
+  // 限制处理数量以避免超时和限流（最多30只）
+  const funds = sortedFunds.slice(0, 30);
   const codes = funds.map(f => f.code);
-  const navMap = await fetchFundNavBatch(codes, 10);  // 减小批量大小
+
+  // 3. 批量获取净值（小批量并发）
+  const navMap = await fetchFundNavBatch(codes, 3);  // 更小的批量
 
   console.log(`净值获取完成: ${navMap.size}/${codes.length}`);
+
+  // 等待一段时间再获取价格，避免连续请求被限流
+  await new Promise(resolve => setTimeout(resolve, 500));
 
   // 3. 确定数据日期（最常见的净值日期）
   const navDates: string[] = [];
@@ -92,26 +104,20 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
   }
   const dataDate = mostCommon(navDates) || '';
 
-  // 4. 批量获取历史收盘价（使用净值日期，限制并发数）
+  // 4. 串行获取历史收盘价（避免并发导致限流）
   const priceMap = new Map<string, number>();
-  const BATCH_SIZE = 10;  // 减小批量大小
-  for (let i = 0; i < codes.length; i += BATCH_SIZE) {
-    const batch = codes.slice(i, i + BATCH_SIZE);
-    const prices = await Promise.all(
-      batch.map(code => fetchHistoricalPrice(code, dataDate))
-    );
-    batch.forEach((code, j) => {
-      if (prices[j] !== null) {
-        priceMap.set(code, prices[j]!);
-      }
-    });
-    // 添加小延迟避免限流
-    if (i + BATCH_SIZE < codes.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+  const codesWithNav = Array.from(navMap.keys());
+
+  for (const code of codesWithNav) {
+    const price = await fetchHistoricalPrice(code, dataDate);
+    if (price !== null) {
+      priceMap.set(code, price);
     }
+    // 每个请求后短暂延迟
+    await new Promise(resolve => setTimeout(resolve, 50));
   }
 
-  console.log(`价格获取完成: ${priceMap.size}/${codes.length}`);
+  console.log(`价格获取完成: ${priceMap.size}/${codesWithNav.length}`);
 
   // 5. 计算溢价率（使用同一天的市价和净值）
   const fundsWithPremium: FundWithPremium[] = [];
@@ -151,6 +157,57 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
   const premiumFunds = fundsWithPremium.filter(f => f.premiumRate > 0);
   premiumFunds.sort((a, b) => b.premiumRate - a.premiumRate);
 
+  // 7. 对前10只高溢价基金获取历史数据
+  const topFundsForHistory = premiumFunds.slice(0, 10);
+
+  console.log(`获取历史数据: 前${topFundsForHistory.length}只高溢价基金`);
+
+  // 小批量并发获取历史数据（净值已缓存，只需获取价格）
+  const BATCH_SIZE = 3;
+  for (let i = 0; i < topFundsForHistory.length; i += BATCH_SIZE) {
+    const batch = topFundsForHistory.slice(i, i + BATCH_SIZE);
+
+    await Promise.all(batch.map(async (fund) => {
+      try {
+        // 净值历史已在 fetchFundNav 时缓存，这里直接读取缓存
+        // 只需要额外获取价格历史
+        const [navHistory, priceHistory] = await Promise.all([
+          fetchFundNavHistory(fund.code, 10),  // 命中缓存，无网络请求
+          fetchHistoricalPrices(fund.code, 10),
+        ]);
+
+        // 计算每日溢价率
+        const premiumHistory: DailyPremium[] = [];
+        const allDates = new Set([...navHistory.keys(), ...priceHistory.keys()]);
+        const sortedDates = Array.from(allDates).sort();
+
+        for (const date of sortedDates) {
+          const nav = navHistory.get(date);
+          const price = priceHistory.get(date);
+          if (nav && price && nav > 0) {
+            premiumHistory.push({
+              date,
+              nav,
+              price,
+              premiumRate: Number(((price - nav) / nav * 100).toFixed(2)),
+            });
+          }
+        }
+
+        // 按日期排序,保留最近10条
+        premiumHistory.sort((a, b) => a.date.localeCompare(b.date));
+        fund.premiumHistory = premiumHistory.slice(-10);
+      } catch (e) {
+        console.log(`历史数据获取失败: ${fund.code}`, e);
+      }
+    }));
+
+    // 批次间延迟避免限流
+    if (i + BATCH_SIZE < topFundsForHistory.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
   const executionTime = new Date().toISOString();
 
   return {
@@ -165,6 +222,14 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
     },
     topPremiumFunds: premiumFunds, // 存储所有溢价基金，由调用方截取
     allFunds: fundsWithPremium,
+    _debug: {
+      totalFundsInMarket: allFunds.length, // 市场上所有基金
+      processedFunds: funds.length,         // 实际处理的基金数
+      navFetched: navMap.size,
+      priceFetched: priceMap.size,
+      dataDate,
+      historyFetched: topFundsForHistory.length,
+    },
   };
 }
 

@@ -9,10 +9,18 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 // 历史价格缓存 (code -> date -> closePrice)
 const priceCache = new Map<string, Map<string, number>>();
 
+// 净值历史缓存 (code -> date -> nav) - 复用pingzhongdata请求
+const navHistoryCache = new Map<string, Map<string, number>>();
+
 /**
  * 获取基金历史收盘价
  */
 export async function fetchHistoricalPrice(code: string, date: string): Promise<number | null> {
+  // 如果日期为空，直接返回
+  if (!date) {
+    return null;
+  }
+
   // 检查缓存
   if (priceCache.has(code)) {
     const dateMap = priceCache.get(code)!;
@@ -27,11 +35,21 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
 
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Referer': 'https://quote.eastmoney.com/',
+      },
     });
+
+    if (!res.ok) {
+      console.log(`Price fetch failed for ${code}: HTTP ${res.status}`);
+      return null;
+    }
+
     const data = await res.json() as { data?: { klines?: string[] } };
 
-    if (!data.data?.klines) {
+    if (!data.data?.klines || data.data.klines.length === 0) {
+      console.log(`No klines data for ${code}`);
       return null;
     }
 
@@ -48,8 +66,13 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
     }
 
     priceCache.set(code, dateMap);
-    return dateMap.get(date) || null;
-  } catch {
+    const price = dateMap.get(date);
+    if (!price) {
+      console.log(`No price for ${code} on ${date}, available: ${Array.from(dateMap.keys()).slice(-3).join(',')}`);
+    }
+    return price || null;
+  } catch (e) {
+    console.log(`Price fetch error for ${code}: ${e}`);
     return null;
   }
 }
@@ -151,6 +174,7 @@ export async function fetchLOFList(): Promise<Fund[]> {
 
 /**
  * 获取基金净值（通过解析 JS 文件）
+ * 同时缓存历史净值数据供后续复用
  */
 export async function fetchFundNav(code: string): Promise<FundNav | null> {
   const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js`;
@@ -177,6 +201,15 @@ export async function fetchFundNav(code: string): Promise<FundNav | null> {
       return null;
     }
 
+    // 缓存所有历史净值数据（复用此次请求）
+    const historyMap = new Map<string, number>();
+    for (const item of data) {
+      const d = new Date(item.x + 8 * 60 * 60 * 1000);
+      const dateStr = d.toISOString().split('T')[0];
+      historyMap.set(dateStr, item.y);
+    }
+    navHistoryCache.set(code, historyMap);
+
     const latest = data[data.length - 1];
     // 时间戳是北京时间0点，需要转换为中国日期
     const date = new Date(latest.x + 8 * 60 * 60 * 1000); // 加8小时转UTC+8
@@ -192,11 +225,123 @@ export async function fetchFundNav(code: string): Promise<FundNav | null> {
 }
 
 /**
- * 批量获取基金净值（并发限制）
+ * 获取基金多日净值历史（最近N天）
+ * 优先使用缓存，避免重复请求
+ */
+export async function fetchFundNavHistory(code: string, days: number = 10): Promise<Map<string, number>> {
+  // 检查缓存（fetchFundNav已经缓存过）
+  if (navHistoryCache.has(code)) {
+    const cached = navHistoryCache.get(code)!;
+    const sortedDates = Array.from(cached.keys()).sort();
+    const recentDates = sortedDates.slice(-days);
+    const result = new Map<string, number>();
+    for (const date of recentDates) {
+      result.set(date, cached.get(date)!);
+    }
+    return result;
+  }
+
+  // 缓存未命中，发起请求
+  const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js`;
+  const result = new Map<string, number>();
+
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+    });
+
+    if (!res.ok) {
+      return result;
+    }
+
+    const text = await res.text();
+
+    // 用正则提取 Data_netWorthTrend 变量
+    const match = text.match(/var Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
+    if (!match) {
+      return result;
+    }
+
+    const data = JSON.parse(match[1]) as Array<{ x: number; y: number }>;
+    if (!data || data.length === 0) {
+      return result;
+    }
+
+    // 缓存全部历史数据
+    const historyMap = new Map<string, number>();
+    for (const item of data) {
+      const date = new Date(item.x + 8 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      historyMap.set(dateStr, item.y);
+    }
+    navHistoryCache.set(code, historyMap);
+
+    // 取最近 N 天的数据
+    const recentData = data.slice(-days);
+    for (const item of recentData) {
+      const date = new Date(item.x + 8 * 60 * 60 * 1000);
+      const dateStr = date.toISOString().split('T')[0];
+      result.set(dateStr, item.y);
+    }
+
+    return result;
+  } catch {
+    return result;
+  }
+}
+
+/**
+ * 获取多日历史收盘价（返回 Map<date, price>）
+ */
+export async function fetchHistoricalPrices(code: string, days: number = 10): Promise<Map<string, number>> {
+  // 确定交易所前缀 (深圳1开头用0，上海5开头用1)
+  const prefix = code.startsWith('5') ? '1' : '0';
+  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${code}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=${days + 5}`;
+
+  const result = new Map<string, number>();
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Referer': 'https://quote.eastmoney.com/',
+      },
+    });
+
+    if (!res.ok) {
+      return result;
+    }
+
+    const data = await res.json() as { data?: { klines?: string[] } };
+
+    if (!data.data?.klines || data.data.klines.length === 0) {
+      return result;
+    }
+
+    // 解析所有日期的价格，取最近 N 条
+    const klines = data.data.klines.slice(-days);
+    for (const line of klines) {
+      const parts = line.split(',');
+      // 格式: 日期,开盘,收盘,最高,最低
+      const d = parts[0];
+      const close = parseFloat(parts[2]);
+      if (!isNaN(close)) {
+        result.set(d, close);
+      }
+    }
+
+    return result;
+  } catch {
+    return result;
+  }
+}
+
+/**
+ * 批量获取基金净值（小批量并发）
  */
 export async function fetchFundNavBatch(
   codes: string[],
-  concurrency: number = 10
+  concurrency: number = 5
 ): Promise<Map<string, FundNav>> {
   const results = new Map<string, FundNav>();
 
@@ -215,9 +360,9 @@ export async function fetchFundNavBatch(
       }
     }
 
-    // 添加小延迟避免限流
+    // 批次间延迟避免限流
     if (i + concurrency < codes.length) {
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
   }
 
