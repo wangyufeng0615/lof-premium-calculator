@@ -275,7 +275,7 @@ async function generateFinalResult(env: Env, progress: BatchProgress): Promise<v
       processedFunds: progress.processedFunds,
       navFetched: allFunds.length,
       priceFetched: allFunds.length,
-      dataDate: mostCommonNavDate,
+      mostCommonDate: mostCommonNavDate,
       historyFetched: topFundsForHistory.length,
     },
   };

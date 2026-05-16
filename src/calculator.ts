@@ -85,36 +85,33 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
     (a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent)
   );
 
-  // 限制处理数量以避免超时和限流（最多30只）
-  const funds = sortedFunds.slice(0, 30);
+  // 限制处理数量以避免超时和限流（最多50只）
+  const funds = sortedFunds.slice(0, 50);
   const codes = funds.map(f => f.code);
 
-  // 3. 批量获取净值（小批量并发）
-  const navMap = await fetchFundNavBatch(codes, 3);  // 更小的批量
+  // 3. 批量获取净值（串行获取，确保100%成功率）
+  const navMap = await fetchFundNavBatch(codes, 1);  // 完全串行
 
   console.log(`净值获取完成: ${navMap.size}/${codes.length}`);
 
   // 等待一段时间再获取价格，避免连续请求被限流
   await new Promise(resolve => setTimeout(resolve, 500));
 
-  // 3. 确定数据日期（最常见的净值日期）
-  const navDates: string[] = [];
-  for (const nav of navMap.values()) {
-    navDates.push(nav.navDate);
-  }
-  const dataDate = mostCommon(navDates) || '';
-
-  // 4. 串行获取历史收盘价（避免并发导致限流）
+  // 4. 串行获取历史收盘价（每只基金用自己的净值日期）
   const priceMap = new Map<string, number>();
   const codesWithNav = Array.from(navMap.keys());
 
   for (const code of codesWithNav) {
-    const price = await fetchHistoricalPrice(code, dataDate);
+    const nav = navMap.get(code);
+    if (!nav) continue;
+
+    // 使用该基金自己的净值日期获取对应的历史价格
+    const price = await fetchHistoricalPrice(code, nav.navDate);
     if (price !== null) {
       priceMap.set(code, price);
     }
-    // 每个请求后短暂延迟
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // 每个请求后延迟，确保不触发限流
+    await new Promise(resolve => setTimeout(resolve, 400));
   }
 
   console.log(`价格获取完成: ${priceMap.size}/${codesWithNav.length}`);
@@ -128,9 +125,6 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
 
     // 必须同时有净值和同一天的历史价格
     if (!nav || !historicalPrice) continue;
-
-    // 只使用净值日期与数据日期匹配的基金
-    if (nav.navDate !== dataDate) continue;
 
     const fundType = detectFundType(fund.name);
     const premiumRate = calculatePremiumRate(historicalPrice, nav.nav);
@@ -156,6 +150,10 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
   // 6. 统计
   const premiumFunds = fundsWithPremium.filter(f => f.premiumRate > 0);
   premiumFunds.sort((a, b) => b.premiumRate - a.premiumRate);
+
+  // 计算最常见的净值日期（仅用于显示）
+  const navDates = fundsWithPremium.map(f => f.navDate);
+  const mostCommonDate = mostCommon(navDates) || '';
 
   // 7. 对前10只高溢价基金获取历史数据
   const topFundsForHistory = premiumFunds.slice(0, 10);
@@ -215,7 +213,7 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
     successCount: fundsWithPremium.length,
     failedCount: funds.length - fundsWithPremium.length,
     premiumFundCount: premiumFunds.length,
-    mostCommonNavDate: dataDate,
+    mostCommonNavDate: mostCommonDate,
     arbitrageCosts: {
       premium: PREMIUM_ARBITRAGE_COST,
       discount: DISCOUNT_ARBITRAGE_COST,
@@ -227,7 +225,7 @@ export async function calculate(topN: number = 20): Promise<CalculationResult> {
       processedFunds: funds.length,         // 实际处理的基金数
       navFetched: navMap.size,
       priceFetched: priceMap.size,
-      dataDate,
+      mostCommonDate,
       historyFetched: topFundsForHistory.length,
     },
   };

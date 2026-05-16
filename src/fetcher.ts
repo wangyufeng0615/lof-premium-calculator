@@ -6,6 +6,33 @@ import type { Fund, FundNav } from './types';
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
+// 延迟函数
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * 带重试的请求包装函数（指数退避）
+ */
+async function fetchWithRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 4,
+  baseDelay: number = 1000
+): Promise<T | null> {
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i < maxRetries) {
+        const waitTime = baseDelay * Math.pow(2, i); // 指数退避: 1s, 2s, 4s, 8s
+        console.log(`Retry ${i + 1}/${maxRetries} after ${waitTime}ms: ${e}`);
+        await delay(waitTime);
+      } else {
+        console.log(`All ${maxRetries} retries failed: ${e}`);
+      }
+    }
+  }
+  return null;
+}
+
 // 历史价格缓存 (code -> date -> closePrice)
 const priceCache = new Map<string, Map<string, number>>();
 
@@ -33,7 +60,7 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
   const prefix = code.startsWith('5') ? '1' : '0';
   const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${code}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=30`;
 
-  try {
+  return fetchWithRetry(async () => {
     const res = await fetch(url, {
       headers: {
         'User-Agent': USER_AGENT,
@@ -42,8 +69,7 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
     });
 
     if (!res.ok) {
-      console.log(`Price fetch failed for ${code}: HTTP ${res.status}`);
-      return null;
+      throw new Error(`HTTP ${res.status}`);
     }
 
     const data = await res.json() as { data?: { klines?: string[] } };
@@ -71,10 +97,7 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
       console.log(`No price for ${code} on ${date}, available: ${Array.from(dateMap.keys()).slice(-3).join(',')}`);
     }
     return price || null;
-  } catch (e) {
-    console.log(`Price fetch error for ${code}: ${e}`);
-    return null;
-  }
+  });
 }
 
 /**
@@ -123,16 +146,15 @@ export async function fetchLOFList(): Promise<Fund[]> {
   const total = firstData.data.total;
   const totalPages = Math.ceil(total / 100);
 
-  // 获取剩余页面
-  const promises: Promise<Response>[] = [];
+  // 获取剩余页面（串行获取，避免并发过高被限流）
   for (let page = 2; page <= totalPages; page++) {
     const params = { ...baseParams, pn: String(page) };
     const url = `${baseUrl}?${new URLSearchParams(params)}`;
-    promises.push(fetch(url, { headers }));
-  }
 
-  const responses = await Promise.all(promises);
-  for (const res of responses) {
+    // 页面间延迟避免限流
+    await delay(100);
+
+    const res = await fetch(url, { headers });
     const data = await res.json() as { data: { diff: unknown } };
     if (data.data?.diff) {
       allRecords.push(...toArray(data.data.diff));
@@ -179,13 +201,13 @@ export async function fetchLOFList(): Promise<Fund[]> {
 export async function fetchFundNav(code: string): Promise<FundNav | null> {
   const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js`;
 
-  try {
+  return fetchWithRetry(async () => {
     const res = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT },
     });
 
     if (!res.ok) {
-      return null;
+      throw new Error(`HTTP ${res.status}`);
     }
 
     const text = await res.text();
@@ -219,9 +241,7 @@ export async function fetchFundNav(code: string): Promise<FundNav | null> {
       nav: latest.y,
       navDate,
     };
-  } catch {
-    return null;
-  }
+  });
 }
 
 /**
@@ -362,7 +382,7 @@ export async function fetchFundNavBatch(
 
     // 批次间延迟避免限流
     if (i + concurrency < codes.length) {
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await delay(500);
     }
   }
 

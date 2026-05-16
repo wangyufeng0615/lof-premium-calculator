@@ -64,7 +64,7 @@ export interface CalculationResult {
     processedFunds: number;           // 实际处理的基金数
     navFetched: number;               // 成功获取净值数量
     priceFetched: number;             // 成功获取价格数量
-    dataDate: string;                 // 使用的数据日期
+    mostCommonDate: string;           // 最常见的净值日期
     historyFetched?: number;          // 获取历史数据的基金数
   };
 }

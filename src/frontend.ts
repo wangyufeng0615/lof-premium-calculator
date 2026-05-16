@@ -16,6 +16,7 @@ export const HTML_PAGE = `<!DOCTYPE html>
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #8b949e; --fg3: #6e7681;
   --border: #30363d; --green: #3fb950; --red: #f85149; --blue: #58a6ff; --yellow: #d29922; --purple: #a371f7;
   --hover: #1f2937;
+  --header-height: 120px;
 }
 html { font-size: 12px; }
 body {
@@ -98,7 +99,6 @@ body {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.95rem;
-  min-width: 900px;
 }
 .tbl th, .tbl td {
   padding: 6px 8px;
@@ -112,7 +112,7 @@ body {
   font-weight: 500;
   font-size: 0.85rem;
   position: sticky;
-  top: 76px;
+  top: var(--header-height);
   z-index: 10;
   cursor: pointer;
   user-select: none;
@@ -245,8 +245,27 @@ body {
 .tip-row .lb { color: var(--fg3); }
 .tip-row .vl { font-weight: 500; font-variant-numeric: tabular-nums; }
 
-/* 移动端 */
-@media (max-width: 768px) {
+/* 响应式列隐藏 - 默认全部隐藏低优先级列 */
+.hide-sm, .hide-md { display: none; }
+
+/* 小屏手机 (<480px) - 只显示核心列 */
+@media (max-width: 479px) {
+  html { font-size: 10px; }
+  .header { padding: 6px 8px; }
+  .header-top { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .stats-row { gap: 6px; flex-wrap: wrap; }
+  .stat-card { padding: 4px 8px; min-width: 70px; flex: 1; }
+  .stat-card .value { font-size: 1rem; }
+  .stat-card .sub { display: none; }
+  .table-wrap { padding: 2px 4px; }
+  .tbl { font-size: 0.85rem; }
+  .tbl th, .tbl td { padding: 4px 4px; }
+  .fund-name { max-width: 80px; }
+  .tag { font-size: 0.6rem; padding: 0 2px; }
+}
+
+/* 移动端 (480px - 767px) */
+@media (min-width: 480px) and (max-width: 767px) {
   html { font-size: 11px; }
   .header { padding: 8px 10px; }
   .header-top { flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -255,8 +274,19 @@ body {
   .stat-card .value { font-size: 1.1rem; }
   .table-wrap { padding: 4px 6px; }
   .tbl { font-size: 0.9rem; }
-  .tbl th { top: 100px; }
-  .fund-name { max-width: 120px; }
+  .fund-name { max-width: 100px; }
+}
+
+/* 平板 (768px - 899px) - 显示中优先级列 */
+@media (min-width: 768px) {
+  .hide-sm { display: table-cell; }
+  .fund-name { max-width: 140px; }
+}
+
+/* 桌面 (>=900px) - 显示全部列 */
+@media (min-width: 900px) {
+  .hide-md { display: table-cell; }
+  .fund-name { max-width: 180px; }
 }
 
 /* 亮色模式 */
@@ -319,12 +349,12 @@ body {
         <th class="c" data-key="rank">#</th>
         <th data-key="code">代码</th>
         <th data-key="name">名称</th>
-        <th class="r" data-key="marketPrice">市价</th>
-        <th class="r" data-key="nav">净值</th>
+        <th class="r hide-md" data-key="marketPrice">市价</th>
+        <th class="r hide-md" data-key="nav">净值</th>
         <th class="r" data-key="premiumRate">溢价率<span class="arr">▼</span></th>
-        <th class="r" data-key="netProfit">净收益</th>
-        <th class="r" data-key="changePercent">涨跌</th>
-        <th class="c">趋势</th>
+        <th class="r hide-sm" data-key="netProfit">净收益</th>
+        <th class="r hide-md" data-key="changePercent">涨跌</th>
+        <th class="c hide-md">趋势</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -390,12 +420,12 @@ function render(){
       '<td class="c rank '+rkCls+'">'+(i+1)+'</td>'+
       '<td class="mono"><a class="code-link" href="'+url+'" target="_blank">'+esc(f.code)+'</a></td>'+
       '<td><span class="fund-name">'+esc(f.name)+'</span>'+tags+'</td>'+
-      '<td class="r mono">'+fmtPrice(f.marketPrice)+'</td>'+
-      '<td class="r mono">'+fmtPrice(f.nav)+'</td>'+
+      '<td class="r mono hide-md">'+fmtPrice(f.marketPrice)+'</td>'+
+      '<td class="r mono hide-md">'+fmtPrice(f.nav)+'</td>'+
       '<td class="r mono prem-cell '+cls(f.premiumRate)+'">'+fmtPct(f.premiumRate)+'</td>'+
-      '<td class="r mono profit-cell '+cls(f.netProfit)+'">'+fmtPct(f.netProfit)+'</td>'+
-      '<td class="r mono '+cls(f.changePercent)+'">'+fmtPct(f.changePercent)+'</td>'+
-      '<td class="c">'+spark(f.premiumHistory,f.code)+'</td>'+
+      '<td class="r mono profit-cell hide-sm '+cls(f.netProfit)+'">'+fmtPct(f.netProfit)+'</td>'+
+      '<td class="r mono hide-md '+cls(f.changePercent)+'">'+fmtPct(f.changePercent)+'</td>'+
+      '<td class="c hide-md">'+spark(f.premiumHistory,f.code)+'</td>'+
     '</tr>';
   });
 
@@ -411,7 +441,30 @@ function render(){
   }
 
   bindSparkTip();
+  // 渲染后更新表头位置
+  updateHeaderHeight();
 }
+
+// 动态计算header高度并更新CSS变量
+function updateHeaderHeight(){
+  const header=document.querySelector('.header');
+  if(header){
+    // 使用 offsetHeight 获取实际高度
+    const h=header.offsetHeight;
+    console.log('Header height:',h);
+    document.documentElement.style.setProperty('--header-height',h+'px');
+    // 同时更新所有 th 的 top 值作为备用
+    document.querySelectorAll('.tbl th').forEach(th=>{
+      th.style.top=h+'px';
+    });
+  }
+}
+// 监听窗口变化时更新header高度
+window.addEventListener('resize',updateHeaderHeight);
+// 页面加载完成后更新
+window.addEventListener('load',updateHeaderHeight);
+// 初始化时更新
+requestAnimationFrame(updateHeaderHeight);
 
 // 趋势图tooltip
 function bindSparkTip(){
@@ -435,8 +488,23 @@ function bindSparkTip(){
         '<div class="tip-row"><span class="lb">最低</span><span class="vl">'+fmtPct(min,false)+'</span></div>';
       tip.classList.remove('hide');
       const r=svg.getBoundingClientRect();
-      tip.style.left=(r.right+8)+'px';
-      tip.style.top=(r.top-20)+'px';
+      // 视口边界检测
+      const tipW=280,tipH=150;
+      let left=r.right+8,top=r.top-20;
+      // 右边界检测：如果超出则放到左边
+      if(left+tipW>window.innerWidth){
+        left=r.left-tipW-8;
+      }
+      // 左边界检测
+      if(left<8)left=8;
+      // 上边界检测
+      if(top<8)top=8;
+      // 下边界检测
+      if(top+tipH>window.innerHeight){
+        top=window.innerHeight-tipH-8;
+      }
+      tip.style.left=left+'px';
+      tip.style.top=top+'px';
     };
     svg.onmouseleave=()=>tip.classList.add('hide');
   });
@@ -507,10 +575,13 @@ async function load(){
     $('updateTime').textContent=t;
 
     filterData();
+    // 数据加载后更新header高度
+    updateHeaderHeight();
   }catch(e){
     $('tbody').innerHTML='<tr><td colspan="9" class="err">加载失败: '+e.message+'</td></tr>';
   }finally{
     $('ld').classList.add('hide');
+    updateHeaderHeight();
   }
 }
 
