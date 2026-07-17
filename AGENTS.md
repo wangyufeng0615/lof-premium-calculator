@@ -23,9 +23,10 @@ npx tsc --noEmit
 # Deploy to Cloudflare
 npm run deploy
 
-# Test scheduled (cron) handler
+# Type-check and validate a deploy bundle without publishing
 npm run test
-# or
+
+# Exercise the scheduled handler in a local Wrangler session
 npx wrangler dev --test-scheduled
 ```
 
@@ -67,7 +68,9 @@ src/
    - `GET /calculate` - Real-time calculation (updates cache)
    - `GET /data` - Read from KV cache (recommended)
    - `GET /health` - Health check
-   - `scheduled()` - Cron trigger handler (daily at UTC 7:30 / Beijing 15:30)
+   - `scheduled()` - Cron trigger handler; frequency is owned by `wrangler.toml`
+     (the current checkout is hourly). Historical comments mention UTC 7:30 /
+     Beijing 15:30, so confirm the intended production schedule before deploy.
 
 ### Caching Strategy
 

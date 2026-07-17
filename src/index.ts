@@ -8,14 +8,15 @@
  * - GET /health     健康检查
  *
  * 定时任务:
- * - Cron Trigger 每天 15:30 (UTC 7:30) 自动计算并缓存
+ * - 触发频率以 wrangler.toml 为准；当前 checkout 为每小时一次。旧版曾按
+ *   UTC 7:30（北京时间 15:30）运行，调整 schedule 时需同步更新文档。
  */
 
 import type { Env, CachedData, CalculationResult } from './types';
 import { calculate, formatReport } from './calculator';
 import { HTML_PAGE, ADMIN_PAGE } from './frontend';
 
-// 管理页面路径（复杂URL起保护作用）
+// 复杂路径只减少误触，不提供身份认证；公开部署时必须由外层访问控制保护。
 const ADMIN_PATH = '/lof-admin-x7k9m2p4';
 import { getProgress, startBatchCalculation, processNextBatch, resetProgress } from './batch-calculator';
 
