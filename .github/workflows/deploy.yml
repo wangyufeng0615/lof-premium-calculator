@@ -25,16 +25,15 @@ jobs:
         run: bun run tsc --noEmit
 
       - name: Deploy to Cloudflare Workers
-        id: deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          packageManager: bun
+        run: bunx cf deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DO_NOT_TRACK: "1"
 
       - name: Warm up cache
         run: |
           sleep 5
-          curl -s "${{ steps.deploy.outputs.deployment-url }}/calculate?top=100" | head -c 200
+          curl -s "https://lof-premium-calculator.wangyufeng.workers.dev/calculate?top=100" | head -c 200
           echo ""
           echo "Cache warmed up successfully"

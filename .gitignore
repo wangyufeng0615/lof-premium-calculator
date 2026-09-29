@@ -25,3 +25,6 @@ npm-debug.log*
 # Environment
 .env
 .env.local
+
+# cf build output
+.cloudflare/

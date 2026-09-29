@@ -3,25 +3,24 @@
  *
  * 功能:
  * - GET /           API 说明
- * - GET /calculate  实时计算溢价率（会更新缓存）
+ * - GET /calculate  触发一轮分批计算（完成后更新缓存）
  * - GET /data       从缓存获取数据
  * - GET /health     健康检查
  *
  * 定时任务:
- * - 触发频率以 wrangler.toml 为准；当前 checkout 为每小时一次。旧版曾按
- *   UTC 7:30（北京时间 15:30）运行，调整 schedule 时需同步更新文档。
+ * - 每 2 分钟一次（见 cloudflare.config.ts），推进分批计算；缓存超过 6 小时
+ *   开新一轮。Workers 免费版单次调用最多 50 个子请求，全量计算只能分批完成。
  */
 
-import type { Env, CachedData, CalculationResult } from './types';
-import { calculate, formatReport } from './calculator';
+import type { Env, CachedData } from './types';
+import { formatReport } from './calculator';
 import { HTML_PAGE, ADMIN_PAGE } from './frontend';
 
 // 复杂路径只减少误触，不提供身份认证；公开部署时必须由外层访问控制保护。
 const ADMIN_PATH = '/lof-admin-x7k9m2p4';
-import { getProgress, startBatchCalculation, processNextBatch, resetProgress } from './batch-calculator';
+import { getProgress, startBatchCalculation, processNextBatch, resetProgress, runScheduledBatch } from './batch-calculator';
 
 const CACHE_KEY = 'lof-premium-data';
-const CACHE_TTL_HOURS = 24;
 
 /**
  * 获取缓存数据
@@ -40,24 +39,6 @@ async function getCachedData(env: Env): Promise<CachedData | null> {
   } catch {
     return null;
   }
-}
-
-/**
- * 保存缓存数据
- */
-async function setCachedData(env: Env, result: CalculationResult): Promise<void> {
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + CACHE_TTL_HOURS * 60 * 60 * 1000);
-
-  const cached: CachedData = {
-    result,
-    cachedAt: now.toISOString(),
-    expiresAt: expiresAt.toISOString(),
-  };
-
-  await env.LOF_CACHE.put(CACHE_KEY, JSON.stringify(cached), {
-    expirationTtl: CACHE_TTL_HOURS * 60 * 60,
-  });
 }
 
 /**
@@ -89,7 +70,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   }
 
   if (path === '/calculate') {
-    return handleCalculate(url, env, corsHeaders);
+    return handleCalculate(env, corsHeaders);
   }
 
   if (path === '/data') {
@@ -147,14 +128,14 @@ function handleApiInfo(headers: Record<string, string>): Response {
       '/': '前端页面',
       '/api': 'API 说明',
       '/data': '从缓存获取数据（推荐）',
-      '/calculate': '实时计算溢价率（会更新缓存）',
+      '/calculate': '触发一轮分批计算（完成后更新缓存）',
       '/health': '健康检查',
     },
     params: {
       top: '返回前N只基金 (默认20)',
       format: '返回格式 json/text (默认json)',
     },
-    cron: '每天 UTC 7:30 (北京时间 15:30) 自动更新缓存',
+    cron: '每 2 分钟推进一批分批计算，缓存超过 6 小时自动开新一轮',
   };
 
   return new Response(JSON.stringify(info, null, 2), {
@@ -163,32 +144,25 @@ function handleApiInfo(headers: Record<string, string>): Response {
 }
 
 /**
- * GET /calculate - 实时计算
+ * GET /calculate - 触发一轮分批计算
+ *
+ * Workers 免费版单次调用最多 50 个子请求，无法在一次请求里算完；
+ * 这里只开新一轮（已有进行中的则直接返回进度），由定时任务逐批推进。
  */
 async function handleCalculate(
-  url: URL,
   env: Env,
   headers: Record<string, string>
 ): Promise<Response> {
-  const topN = parseInt(url.searchParams.get('top') || '20', 10);
-  const format = url.searchParams.get('format') || 'json';
-
   try {
-    const result = await calculate(topN);
-
-    // 更新缓存
-    await setCachedData(env, result);
-
-    if (format === 'text') {
-      return new Response(formatReport(result, topN), {
-        headers: { ...headers, 'Content-Type': 'text/plain; charset=utf-8' },
-      });
+    let progress = await getProgress(env);
+    if (progress.status !== 'running') {
+      progress = await startBatchCalculation(env);
     }
-
     return new Response(JSON.stringify({
-      ...result,
-      topPremiumFunds: result.topPremiumFunds.slice(0, topN),
+      message: `已开始分批计算，共 ${progress.totalBatches} 批，定时任务每 2 分钟推进一批，完成后 /data 自动更新`,
+      progress,
     }, null, 2), {
+      status: 202,
       headers: { ...headers, 'Content-Type': 'application/json; charset=utf-8' },
     });
   } catch (error) {
@@ -213,15 +187,27 @@ async function handleData(
 
   let cached = await getCachedData(env);
 
-  // 无缓存时自动触发计算
+  // 无缓存时触发分批计算，数据由定时任务逐批算出
   if (!cached) {
-    const result = await calculate(100);
-    await setCachedData(env, result);
-    cached = {
-      result,
-      cachedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    };
+    let progress = await getProgress(env);
+    if (progress.status !== 'running') {
+      try {
+        progress = await startBatchCalculation(env);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        return new Response(JSON.stringify({ error: `缓存为空且无法开始计算: ${message}` }), {
+          status: 503,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+    return new Response(JSON.stringify({
+      error: `数据计算中（${progress.currentBatch}/${progress.totalBatches} 批），请稍后刷新`,
+      progress,
+    }), {
+      status: 503,
+      headers: { ...headers, 'Content-Type': 'application/json; charset=utf-8' },
+    });
   }
 
   const result = cached.result;
@@ -327,18 +313,14 @@ async function handleBatchReset(env: Env, headers: Record<string, string>): Prom
 }
 
 /**
- * 定时任务处理
+ * 定时任务处理：推进分批计算
  */
 async function handleScheduled(env: Env): Promise<void> {
-  console.log('Cron triggered: 开始计算溢价率...');
-
   try {
-    const result = await calculate(50);
-    await setCachedData(env, result);
-
-    console.log(`计算完成: ${result.successCount} 只基金, ${result.premiumFundCount} 只溢价`);
+    const progress = await runScheduledBatch(env);
+    console.log(`分批计算: ${progress.status} ${progress.currentBatch}/${progress.totalBatches}, 成功 ${progress.successCount}`);
   } catch (error) {
-    console.error('计算失败:', error);
+    console.error('分批计算失败:', error);
   }
 }
 

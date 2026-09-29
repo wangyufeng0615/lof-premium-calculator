@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## Project Overview
 
-LOF基金溢价率计算工具 - A Cloudflare Workers service for calculating premium rates of LOF (Listed Open-end Fund) funds in China. Features automatic daily caching via Cron Triggers and KV storage.
+LOF基金溢价率计算工具 - A Cloudflare Workers service for calculating premium rates of LOF (Listed Open-end Fund) funds in China. A cron trigger every 2 minutes advances a KV-backed batch calculation (Workers Free allows only 50 subrequests per invocation, so a full run cannot fit in one request).
 
 ## Development Commands
 
@@ -15,7 +15,7 @@ npm install
 # Local development
 npm run dev
 # or
-npx wrangler dev
+npx cf dev
 
 # Type check
 npx tsc --noEmit
@@ -23,23 +23,21 @@ npx tsc --noEmit
 # Deploy to Cloudflare
 npm run deploy
 
-# Type-check and validate a deploy bundle without publishing
+# Type-check and build the deploy bundle without publishing
 npm run test
 
-# Exercise the scheduled handler in a local Wrangler session
-npx wrangler dev --test-scheduled
+# Exercise the scheduled handler in a local session
+npx cf dev --test-scheduled
 ```
 
 ## Pre-deployment Setup
 
-Before deploying, create KV namespace and update `wrangler.toml`:
+Migrated from Wrangler to cf on 2026-09-29. Worker config lives in `cloudflare.config.ts` (name, cron, KV, vars); `wrangler.config.ts` holds Wrangler-only build options (`minify`) because `cf dev` / `cf deploy` still delegate to the local wrangler (4.100+). `wrangler.toml` was removed, so bare `wrangler` commands no longer see the config. CI deploys with `bunx cf deploy`.
+
+The KV namespace already exists. For a new account, create it and put the returned ID in `cloudflare.config.ts`:
 
 ```bash
-# Create KV namespace
 npx wrangler kv namespace create LOF_CACHE
-npx wrangler kv namespace create LOF_CACHE --preview
-
-# Update wrangler.toml with the returned IDs
 ```
 
 ## Architecture
@@ -48,14 +46,15 @@ npx wrangler kv namespace create LOF_CACHE --preview
 src/
 ├── index.ts        # Workers entry (fetch + scheduled handlers)
 ├── types.ts        # TypeScript type definitions
-├── fetcher.ts      # EastMoney API data fetching
+├── fetcher.ts      # NAV from EastMoney, LOF list and daily closes from Sina
 └── calculator.ts   # Premium rate calculation logic
 ```
 
 ### Core Flow
 
 1. **Data Fetching** (`fetcher.ts`):
-   - `fetchLOFList()`: Paginated fetch from EastMoney API for LOF fund list with market prices
+   - `fetchLOFList()`: Paginated fetch of the LOF list with market prices from Sina (`Market_Center` node `lof_hq_fund`). EastMoney quote APIs (`push2`, `push2his`) reset connections from Cloudflare egress IPs (520/502 in Workers), so they were replaced in 2026-09
+   - `fetchHistoricalPrice()` / `fetchHistoricalPrices()`: Sina daily K-line closes
    - `fetchFundNav()`: Parse JS file from `fund.eastmoney.com/pingzhongdata/{code}.js` to extract NAV data
 
 2. **Calculation** (`calculator.ts`):
@@ -65,16 +64,15 @@ src/
 
 3. **Workers Entry** (`index.ts`):
    - `GET /` - API documentation
-   - `GET /calculate` - Real-time calculation (updates cache)
+   - `GET /calculate` - Start a batch run (returns 202 with progress)
    - `GET /data` - Read from KV cache (recommended)
    - `GET /health` - Health check
-   - `scheduled()` - Cron trigger handler; frequency is owned by `wrangler.toml`
-     (the current checkout is hourly). Historical comments mention UTC 7:30 /
-     Beijing 15:30, so confirm the intended production schedule before deploy.
+   - `scheduled()` - Every 2 minutes (`cloudflare.config.ts`): `runScheduledBatch()` advances one batch, or starts a new run when the cached result is older than 6 hours
 
 ### Caching Strategy
 
 - Results cached in Cloudflare KV with 24-hour TTL
-- Cron Trigger updates cache daily after market close
-- `/data` endpoint reads from cache (fast)
-- `/calculate` endpoint computes fresh data and updates cache
+- Batch runs refresh the cache roughly every 6 hours; a full run is ~33 batches of 10 funds
+- `/data` endpoint reads from cache; on a miss it starts a batch run and returns 503 with progress
+- KV is eventually consistent (~60s), so keep the cron interval at 2 minutes or more; batch results are deduplicated by fund code
+- `calculate()` in `calculator.ts` is the old single-request path; it exceeds the free-plan subrequest limit and is no longer wired to any route

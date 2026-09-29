@@ -16,8 +16,12 @@ const DISCOUNT_ARBITRAGE_COST = 0.51;
 const QDII_KEYWORDS = ['QDII', '海外', '美股', '港股', '纳斯达克', '标普', '恒生', '日经'];
 const COMMODITY_KEYWORDS = ['原油', '黄金', '白银', '石油', '贵金属', '商品', '有色'];
 
+// 定时任务开新一轮计算的间隔（小时）
+const REFRESH_INTERVAL_HOURS = 6;
+
 // KV keys
 const PROGRESS_KEY = 'batch-progress';
+const RESULT_CACHE_KEY = 'lof-premium-data';
 const FUNDS_KEY = 'batch-funds';
 const RESULTS_KEY = 'batch-results';
 
@@ -173,7 +177,9 @@ export async function processNextBatch(env: Env): Promise<BatchProgress> {
   // 保存结果
   const existingResultsData = await env.LOF_CACHE.get(RESULTS_KEY);
   const existingResults: FundWithPremium[] = existingResultsData ? JSON.parse(existingResultsData) : [];
-  existingResults.push(...results);
+  // KV 最终一致，定时任务可能读到旧进度而重复处理同一批，按代码去重
+  const seen = new Set(existingResults.map(f => f.code));
+  existingResults.push(...results.filter(f => !seen.has(f.code)));
   await env.LOF_CACHE.put(RESULTS_KEY, JSON.stringify(existingResults), { expirationTtl: 3600 });
 
   // 更新进度
@@ -283,11 +289,29 @@ async function generateFinalResult(env: Env, progress: BatchProgress): Promise<v
   // 保存到缓存
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  await env.LOF_CACHE.put('lof-premium-data', JSON.stringify({
+  await env.LOF_CACHE.put(RESULT_CACHE_KEY, JSON.stringify({
     result,
     cachedAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
   }), { expirationTtl: 24 * 60 * 60 });
+}
+
+/**
+ * 定时任务入口：有进行中的计算就推进一批，否则在缓存过期时开新一轮。
+ * Workers 免费版单次调用最多 50 个子请求，全量计算只能拆到多次调用里完成。
+ */
+export async function runScheduledBatch(env: Env): Promise<BatchProgress> {
+  const progress = await getProgress(env);
+  if (progress.status === 'running') {
+    return processNextBatch(env);
+  }
+
+  const cached = await env.LOF_CACHE.get(RESULT_CACHE_KEY);
+  const cachedAt = cached ? Date.parse(JSON.parse(cached).cachedAt) : 0;
+  if (Date.now() - cachedAt < REFRESH_INTERVAL_HOURS * 60 * 60 * 1000) {
+    return progress;
+  }
+  return startBatchCalculation(env);
 }
 
 /**

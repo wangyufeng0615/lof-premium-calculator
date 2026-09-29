@@ -1,10 +1,43 @@
 /**
- * 数据获取模块 - 东方财富 API
+ * 数据获取模块
+ *
+ * 净值来自东方财富 pingzhongdata；LOF 列表和日 K 收盘价来自新浪。
+ * 东方财富的行情接口（push2 / push2his）会对 Cloudflare 出口 IP 直接断开连接
+ * （Worker 里表现为 520/502），2026-09 起改用新浪。
  */
 
 import type { Fund, FundNav } from './types';
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+
+const SINA_HEADERS = {
+  'User-Agent': USER_AGENT,
+  'Referer': 'https://finance.sina.com.cn/',
+};
+const SINA_MARKET_CENTER = 'https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center';
+
+// 交易所前缀：上海 5 开头，深圳 1 开头
+const sinaSymbol = (code: string) => `${code.startsWith('5') ? 'sh' : 'sz'}${code}`;
+
+/**
+ * 新浪日 K 线，返回 date -> 收盘价
+ */
+async function fetchSinaDailyCloses(code: string, days: number): Promise<Map<string, number>> {
+  const url = `https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol=${sinaSymbol(code)}&scale=240&ma=no&datalen=${days}`;
+  const res = await fetch(url, { headers: SINA_HEADERS });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const bars = await res.json() as Array<{ day: string; close: string }> | null;
+  const result = new Map<string, number>();
+  for (const bar of bars || []) {
+    const close = parseFloat(bar.close);
+    if (!isNaN(close)) {
+      result.set(bar.day, close);
+    }
+  }
+  return result;
+}
 
 // 延迟函数
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -21,6 +54,11 @@ async function fetchWithRetry<T>(
     try {
       return await fn();
     } catch (e) {
+      // 子请求配额用完后重试只会继续失败
+      if (String(e).includes('Too many subrequests')) {
+        console.log(`Subrequest limit reached: ${e}`);
+        return null;
+      }
       if (i < maxRetries) {
         const waitTime = baseDelay * Math.pow(2, i); // 指数退避: 1s, 2s, 4s, 8s
         console.log(`Retry ${i + 1}/${maxRetries} after ${waitTime}ms: ${e}`);
@@ -56,39 +94,11 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
     }
   }
 
-  // 确定交易所前缀 (深圳1开头用0，上海5开头用1)
-  const prefix = code.startsWith('5') ? '1' : '0';
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${code}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=30`;
-
   return fetchWithRetry(async () => {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        'Referer': 'https://quote.eastmoney.com/',
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const data = await res.json() as { data?: { klines?: string[] } };
-
-    if (!data.data?.klines || data.data.klines.length === 0) {
+    const dateMap = await fetchSinaDailyCloses(code, 30);
+    if (dateMap.size === 0) {
       console.log(`No klines data for ${code}`);
       return null;
-    }
-
-    // 解析并缓存所有日期的价格
-    const dateMap = new Map<string, number>();
-    for (const line of data.data.klines) {
-      const parts = line.split(',');
-      // 格式: 日期,开盘,收盘,最高,最低
-      const d = parts[0];
-      const close = parseFloat(parts[2]);
-      if (!isNaN(close)) {
-        dateMap.set(d, close);
-      }
     }
 
     priceCache.set(code, dateMap);
@@ -104,69 +114,37 @@ export async function fetchHistoricalPrice(code: string, date: string): Promise<
  * 获取 LOF 基金列表（分页获取全部）
  */
 export async function fetchLOFList(): Promise<Fund[]> {
-  const baseUrl = 'https://88.push2.eastmoney.com/api/qt/clist/get';
-  const baseParams = {
-    pn: '1',
-    pz: '100',
-    po: '1',
-    np: '1',
-    ut: 'bd1d9ddb04089700cf9c27f6f7426281',
-    fltt: '2',
-    invt: '2',
-    wbp2u: '|0|0|0|web',
-    fid: 'f3',
-    fs: 'b:MK0404,b:MK0405,b:MK0406,b:MK0407',
-    fields: 'f12,f14,f2,f3',
-  };
+  const node = 'lof_hq_fund';
+  const pageSize = 100;
 
-  const headers = {
-    'User-Agent': USER_AGENT,
-    'Referer': 'https://quote.eastmoney.com/',
-  };
-
-  // 获取第一页，确定总数
-  const firstUrl = `${baseUrl}?${new URLSearchParams(baseParams)}`;
-  const firstRes = await fetch(firstUrl, { headers });
-  const firstData = await firstRes.json() as {
-    data: { diff: Record<string, unknown>[]; total: number };
-  };
-
-  if (!firstData.data?.diff) {
+  const countRes = await fetch(`${SINA_MARKET_CENTER}.getHQNodeStockCount?node=${node}`, { headers: SINA_HEADERS });
+  if (!countRes.ok) {
+    throw new Error(`获取 LOF 数量失败: HTTP ${countRes.status}`);
+  }
+  const total = Number(JSON.parse(await countRes.text()));
+  if (!total) {
     throw new Error('获取 LOF 列表失败');
   }
 
-  // diff 可能是对象或数组，统一转为数组
-  const toArray = (diff: unknown): Record<string, unknown>[] => {
-    if (Array.isArray(diff)) return diff;
-    if (diff && typeof diff === 'object') return Object.values(diff);
-    return [];
-  };
-
-  const allRecords = toArray(firstData.data.diff);
-  const total = firstData.data.total;
-  const totalPages = Math.ceil(total / 100);
-
-  // 获取剩余页面（串行获取，避免并发过高被限流）
-  for (let page = 2; page <= totalPages; page++) {
-    const params = { ...baseParams, pn: String(page) };
-    const url = `${baseUrl}?${new URLSearchParams(params)}`;
-
-    // 页面间延迟避免限流
-    await delay(100);
-
-    const res = await fetch(url, { headers });
-    const data = await res.json() as { data: { diff: unknown } };
-    if (data.data?.diff) {
-      allRecords.push(...toArray(data.data.diff));
+  // 串行分页，避免并发过高被限流
+  const allRecords: Record<string, unknown>[] = [];
+  for (let page = 1; page <= Math.ceil(total / pageSize); page++) {
+    if (page > 1) await delay(100);
+    const url = `${SINA_MARKET_CENTER}.getHQNodeData?page=${page}&num=${pageSize}&sort=symbol&asc=1&node=${node}`;
+    const res = await fetch(url, { headers: SINA_HEADERS });
+    if (!res.ok) {
+      throw new Error(`获取 LOF 列表失败: HTTP ${res.status}`);
     }
+    const rows = await res.json() as Record<string, unknown>[] | null;
+    allRecords.push(...(rows || []));
   }
 
   // 转换为 Fund 对象
   const funds: Fund[] = [];
   for (const item of allRecords) {
-    const code = String(item.f12 || '');
-    const name = String(item.f14 || '');
-    const price = item.f2;
+    const code = String(item.code || '');
+    const name = String(item.name || '');
+    const price = item.trade;
 
     if (!code || !name || price === null || price === '-') {
       continue;
@@ -187,7 +165,7 @@ export async function fetchLOFList(): Promise<Fund[]> {
       code,
       name,
       marketPrice,
-      changePercent: Number(item.f3) || 0,
+      changePercent: Number(item.changepercent) || 0,
     });
   }
 
@@ -314,45 +292,10 @@ export async function fetchFundNavHistory(code: string, days: number = 10): Prom
  * 获取多日历史收盘价（返回 Map<date, price>）
  */
 export async function fetchHistoricalPrices(code: string, days: number = 10): Promise<Map<string, number>> {
-  // 确定交易所前缀 (深圳1开头用0，上海5开头用1)
-  const prefix = code.startsWith('5') ? '1' : '0';
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${code}&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55&klt=101&fqt=0&end=20500101&lmt=${days + 5}`;
-
-  const result = new Map<string, number>();
-
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        'Referer': 'https://quote.eastmoney.com/',
-      },
-    });
-
-    if (!res.ok) {
-      return result;
-    }
-
-    const data = await res.json() as { data?: { klines?: string[] } };
-
-    if (!data.data?.klines || data.data.klines.length === 0) {
-      return result;
-    }
-
-    // 解析所有日期的价格，取最近 N 条
-    const klines = data.data.klines.slice(-days);
-    for (const line of klines) {
-      const parts = line.split(',');
-      // 格式: 日期,开盘,收盘,最高,最低
-      const d = parts[0];
-      const close = parseFloat(parts[2]);
-      if (!isNaN(close)) {
-        result.set(d, close);
-      }
-    }
-
-    return result;
+    return await fetchSinaDailyCloses(code, days);
   } catch {
-    return result;
+    return new Map();
   }
 }
 

@@ -4,14 +4,15 @@
   "description": "LOF基金溢价率计算工具 - Cloudflare Workers",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "cf dev",
+    "deploy": "cf deploy",
     "check": "tsc --noEmit",
-    "test": "tsc --noEmit && wrangler deploy --dry-run"
+    "test": "tsc --noEmit && cf build"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",
+    "cf": "^1.0.0-beta.5",
     "typescript": "^5.7.2",
-    "wrangler": "^4"
+    "wrangler": "^4.143.0"
   }
 }
