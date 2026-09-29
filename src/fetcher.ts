@@ -1,7 +1,7 @@
 /**
  * 数据获取模块
  *
- * 净值来自东方财富 pingzhongdata；LOF 列表和日 K 收盘价来自新浪。
+ * 净值来自东方财富 lsjz 历史净值接口；LOF 列表和日 K 收盘价来自新浪。
  * 东方财富的行情接口（push2 / push2his）会对 Cloudflare 出口 IP 直接断开连接
  * （Worker 里表现为 520/502），2026-09 起改用新浪。
  */
@@ -74,7 +74,7 @@ async function fetchWithRetry<T>(
 // 历史价格缓存 (code -> date -> closePrice)
 const priceCache = new Map<string, Map<string, number>>();
 
-// 净值历史缓存 (code -> date -> nav) - 复用pingzhongdata请求
+// 净值历史缓存 (code -> date -> nav) - 复用 fetchFundNav 的请求
 const navHistoryCache = new Map<string, Map<string, number>>();
 
 /**
@@ -173,52 +173,44 @@ export async function fetchLOFList(): Promise<Fund[]> {
 }
 
 /**
- * 获取基金净值（通过解析 JS 文件）
- * 同时缓存历史净值数据供后续复用
+ * 东方财富历史净值列表（单位净值），返回 date -> nav
+ *
+ * 原先解析 pingzhongdata/{code}.js（约 430KB 的整份历史），单只基金的正则和
+ * JSON 解析就吃掉数毫秒 CPU，Workers 免费版每次调用只有 10ms，定时任务会被
+ * exceededCpu 中止。lsjz 接口按页返回最近几条，解析开销可以忽略。
+ */
+async function fetchNavList(code: string, pageSize: number): Promise<Map<string, number>> {
+  const url = `https://api.fund.eastmoney.com/f10/lsjz?fundCode=${code}&pageIndex=1&pageSize=${pageSize}`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT, 'Referer': 'https://fundf10.eastmoney.com/' },
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const data = await res.json() as { Data?: { LSJZList?: Array<{ FSRQ: string; DWJZ: string }> } };
+  const result = new Map<string, number>();
+  // 接口按日期倒序返回，这里转成正序
+  for (const row of (data.Data?.LSJZList || []).slice().reverse()) {
+    const nav = parseFloat(row.DWJZ);
+    if (row.FSRQ && !isNaN(nav) && nav > 0) {
+      result.set(row.FSRQ, nav);
+    }
+  }
+  return result;
+}
+
+/**
+ * 获取基金最新单位净值，同时缓存最近几天的净值供历史趋势复用
  */
 export async function fetchFundNav(code: string): Promise<FundNav | null> {
-  const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js`;
-
   return fetchWithRetry(async () => {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const text = await res.text();
-
-    // 用正则提取 Data_netWorthTrend 变量
-    const match = text.match(/var Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
-    if (!match) {
+    const history = await fetchNavList(code, 10);
+    if (history.size === 0) {
       return null;
     }
-
-    const data = JSON.parse(match[1]) as Array<{ x: number; y: number }>;
-    if (!data || data.length === 0) {
-      return null;
-    }
-
-    // 缓存所有历史净值数据（复用此次请求）
-    const historyMap = new Map<string, number>();
-    for (const item of data) {
-      const d = new Date(item.x + 8 * 60 * 60 * 1000);
-      const dateStr = d.toISOString().split('T')[0];
-      historyMap.set(dateStr, item.y);
-    }
-    navHistoryCache.set(code, historyMap);
-
-    const latest = data[data.length - 1];
-    // 时间戳是北京时间0点，需要转换为中国日期
-    const date = new Date(latest.x + 8 * 60 * 60 * 1000); // 加8小时转UTC+8
-    const navDate = date.toISOString().split('T')[0];
-
-    return {
-      nav: latest.y,
-      navDate,
-    };
+    navHistoryCache.set(code, history);
+    const [navDate, nav] = Array.from(history.entries()).pop()!;
+    return { nav, navDate };
   });
 }
 
@@ -227,64 +219,16 @@ export async function fetchFundNav(code: string): Promise<FundNav | null> {
  * 优先使用缓存，避免重复请求
  */
 export async function fetchFundNavHistory(code: string, days: number = 10): Promise<Map<string, number>> {
-  // 检查缓存（fetchFundNav已经缓存过）
-  if (navHistoryCache.has(code)) {
-    const cached = navHistoryCache.get(code)!;
-    const sortedDates = Array.from(cached.keys()).sort();
-    const recentDates = sortedDates.slice(-days);
-    const result = new Map<string, number>();
-    for (const date of recentDates) {
-      result.set(date, cached.get(date)!);
-    }
-    return result;
+  const cached = navHistoryCache.get(code);
+  if (cached && cached.size >= days) {
+    return new Map(Array.from(cached.entries()).slice(-days));
   }
-
-  // 缓存未命中，发起请求
-  const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js`;
-  const result = new Map<string, number>();
-
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-    });
-
-    if (!res.ok) {
-      return result;
-    }
-
-    const text = await res.text();
-
-    // 用正则提取 Data_netWorthTrend 变量
-    const match = text.match(/var Data_netWorthTrend\s*=\s*(\[[\s\S]*?\]);/);
-    if (!match) {
-      return result;
-    }
-
-    const data = JSON.parse(match[1]) as Array<{ x: number; y: number }>;
-    if (!data || data.length === 0) {
-      return result;
-    }
-
-    // 缓存全部历史数据
-    const historyMap = new Map<string, number>();
-    for (const item of data) {
-      const date = new Date(item.x + 8 * 60 * 60 * 1000);
-      const dateStr = date.toISOString().split('T')[0];
-      historyMap.set(dateStr, item.y);
-    }
-    navHistoryCache.set(code, historyMap);
-
-    // 取最近 N 天的数据
-    const recentData = data.slice(-days);
-    for (const item of recentData) {
-      const date = new Date(item.x + 8 * 60 * 60 * 1000);
-      const dateStr = date.toISOString().split('T')[0];
-      result.set(dateStr, item.y);
-    }
-
-    return result;
+    const history = await fetchNavList(code, days);
+    navHistoryCache.set(code, history);
+    return history;
   } catch {
-    return result;
+    return new Map();
   }
 }
 

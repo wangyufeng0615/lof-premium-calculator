@@ -55,7 +55,7 @@ src/
 1. **Data Fetching** (`fetcher.ts`):
    - `fetchLOFList()`: Paginated fetch of the LOF list with market prices from Sina (`Market_Center` node `lof_hq_fund`). EastMoney quote APIs (`push2`, `push2his`) reset connections from Cloudflare egress IPs (520/502 in Workers), so they were replaced in 2026-09
    - `fetchHistoricalPrice()` / `fetchHistoricalPrices()`: Sina daily K-line closes
-   - `fetchFundNav()`: Parse JS file from `fund.eastmoney.com/pingzhongdata/{code}.js` to extract NAV data
+   - `fetchFundNav()` / `fetchFundNavHistory()`: Recent unit NAVs from EastMoney `api.fund.eastmoney.com/f10/lsjz` (a few rows of JSON). The old `pingzhongdata/{code}.js` parse (~430KB per fund) blew the Workers Free 10ms CPU budget and cron runs ended with `exceededCpu`
 
 2. **Calculation** (`calculator.ts`):
    - Premium rate = `(marketPrice - nav) / nav * 100%`
