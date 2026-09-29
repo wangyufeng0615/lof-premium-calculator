@@ -19,6 +19,9 @@ const COMMODITY_KEYWORDS = ['原油', '黄金', '白银', '石油', '贵金属',
 // 定时任务开新一轮计算的间隔（小时）
 const REFRESH_INTERVAL_HOURS = 6;
 
+// 分批中间数据的过期时间：一轮约 33 批 × 2 分钟，需明显长于一轮耗时
+const BATCH_STATE_TTL = 4 * 60 * 60;
+
 // KV keys
 const PROGRESS_KEY = 'batch-progress';
 const RESULT_CACHE_KEY = 'lof-premium-data';
@@ -74,10 +77,10 @@ export async function startBatchCalculation(env: Env): Promise<BatchProgress> {
   const totalBatches = Math.ceil(funds.length / BATCH_SIZE);
 
   // 保存基金列表
-  await env.LOF_CACHE.put(FUNDS_KEY, JSON.stringify(funds), { expirationTtl: 3600 });
+  await env.LOF_CACHE.put(FUNDS_KEY, JSON.stringify(funds), { expirationTtl: BATCH_STATE_TTL });
 
   // 清空之前的结果
-  await env.LOF_CACHE.put(RESULTS_KEY, JSON.stringify([]), { expirationTtl: 3600 });
+  await env.LOF_CACHE.put(RESULTS_KEY, JSON.stringify([]), { expirationTtl: BATCH_STATE_TTL });
 
   // 初始化进度
   const progress: BatchProgress = {
@@ -90,7 +93,7 @@ export async function startBatchCalculation(env: Env): Promise<BatchProgress> {
     startedAt: new Date().toISOString(),
   };
 
-  await env.LOF_CACHE.put(PROGRESS_KEY, JSON.stringify(progress), { expirationTtl: 3600 });
+  await env.LOF_CACHE.put(PROGRESS_KEY, JSON.stringify(progress), { expirationTtl: BATCH_STATE_TTL });
   return progress;
 }
 
@@ -180,13 +183,13 @@ export async function processNextBatch(env: Env): Promise<BatchProgress> {
   // KV 最终一致，定时任务可能读到旧进度而重复处理同一批，按代码去重
   const seen = new Set(existingResults.map(f => f.code));
   existingResults.push(...results.filter(f => !seen.has(f.code)));
-  await env.LOF_CACHE.put(RESULTS_KEY, JSON.stringify(existingResults), { expirationTtl: 3600 });
+  await env.LOF_CACHE.put(RESULTS_KEY, JSON.stringify(existingResults), { expirationTtl: BATCH_STATE_TTL });
 
   // 更新进度
   progress.currentBatch++;
   progress.processedFunds = end;
   progress.successCount = existingResults.length;
-  await env.LOF_CACHE.put(PROGRESS_KEY, JSON.stringify(progress), { expirationTtl: 3600 });
+  await env.LOF_CACHE.put(PROGRESS_KEY, JSON.stringify(progress), { expirationTtl: BATCH_STATE_TTL });
 
   return progress;
 }
