@@ -1,657 +1,636 @@
 /**
- * 前端 HTML - 紧凑表格布局
+ * 前端页面。整页放在模板字符串里，页面脚本里不要出现反引号、美元符加花括号和反斜杠转义。
  */
+
+const TOKENS = `
+:root {
+  --bg: #ffffff; --bg-2: #f4f5f7; --bg-3: #eceef1;
+  --ink: #101318; --ink-2: #4a5160; --ink-3: #858c98;
+  --line: #e8eaee; --line-2: #d6dae0;
+  --prem: #d33a2c; --disc: #0e8a76; --flat: #a3aab4; --series: #33425c;
+  --focus: #2c6cc0; --radius: 6px;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115; --bg-2: #161920; --bg-3: #1d212a;
+    --ink: #eceef2; --ink-2: #aab1bd; --ink-3: #737b88;
+    --line: #232731; --line-2: #303542;
+    --prem: #ee5d4c; --disc: #23a08f; --flat: #5f6772; --series: #c6cdd9;
+    --focus: #5a93e0;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; font-synthesis: none; }
+a { color: inherit; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+a:hover { text-decoration-color: currentColor; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+.btn { height: 32px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--bg); font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--ink-3); }
+.btn:disabled { opacity: .45; cursor: default; }
+`;
 
 export const HTML_PAGE = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0d1117">
-<title>LOF溢价监控</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<title>LOF 溢价</title>
+<meta name="description" content="场内 LOF 基金的溢价率、折价率与扣除成本后的价差。">
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-:root {
-  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --fg: #e6edf3; --fg2: #8b949e; --fg3: #6e7681;
-  --border: #30363d; --green: #3fb950; --red: #f85149; --blue: #58a6ff; --yellow: #d29922; --purple: #a371f7;
-  --hover: #1f2937;
-  --header-height: 120px;
-}
-html { font-size: 12px; }
-body {
-  font-family: -apple-system, system-ui, 'SF Pro Text', 'Segoe UI', sans-serif;
-  background: var(--bg);
-  color: var(--fg);
-  line-height: 1.3;
-}
+${TOKENS}
+.wrap { max-width: 1160px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px); }
+.bar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); }
+.bar .wrap { height: 56px; display: flex; align-items: center; gap: 20px; }
+.brand { font-weight: 650; font-size: 16px; letter-spacing: .04em; white-space: nowrap; display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 14px; height: 14px; border-radius: 3px; background: linear-gradient(90deg, var(--disc) 0 45%, var(--line-2) 45% 55%, var(--prem) 55%); }
+.meta { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 
-/* 头部统计区 */
-.header {
-  background: var(--bg2);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 16px;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-.header-inner {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-.header-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.logo h1 { font-size: 1.2rem; font-weight: 600; }
-.header-actions {
-  display: flex;
-  gap: 8px;
-}
-.btn-sm {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  color: var(--fg2);
-  padding: 4px 10px;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.btn-sm:hover { border-color: var(--blue); color: var(--fg); }
-.btn-sm.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+.hero { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: clamp(28px, 5vw, 64px); padding: clamp(36px, 6vw, 72px) 0 clamp(28px, 4vw, 48px); border-bottom: 1px solid var(--line); }
+.eyebrow { margin: 0 0 14px; font-size: 13px; color: var(--ink-3); letter-spacing: .04em; }
+.big { margin: 0; font-size: clamp(64px, 10vw, 104px); line-height: 1; font-weight: 650; letter-spacing: -.02em; }
+.big-label { margin: 12px 0 0; font-size: 16px; }
+.split { display: flex; height: 8px; gap: 2px; margin: 22px 0 10px; max-width: 280px; }
+.split span { border-radius: 2px; }
+.split-legend { display: flex; gap: 18px; font-size: 13.5px; color: var(--ink-2); flex-wrap: wrap; }
+.key { display: inline-flex; align-items: center; gap: 7px; }
+.key::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--k); }
+.facts { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 12px 32px; margin: 28px 0 0; padding-top: 20px; border-top: 1px solid var(--line); }
+.facts dt { font-size: 12.5px; color: var(--ink-3); }
+.facts dd { margin: 2px 0 0; font-size: 15px; }
+.facts dd button { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.facts dd button:hover { text-decoration-color: currentColor; }
+.sub { color: var(--ink-3); }
 
-/* 统计卡片 */
-.stats-row {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.stat-card {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 14px;
-  min-width: 100px;
-}
-.stat-card .label { font-size: 0.85rem; color: var(--fg3); margin-bottom: 2px; }
-.stat-card .value { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.stat-card .value.hl { color: var(--blue); }
-.stat-card .sub { font-size: 0.8rem; color: var(--fg3); margin-top: 1px; }
+.dist { margin: 0; min-width: 0; }
+.dist figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 10px; }
+.dist figcaption b { font-weight: 600; font-size: 14.5px; }
+.dist figcaption span { font-size: 12.5px; color: var(--ink-3); }
+.hist { position: relative; }
+.hist svg { display: block; width: 100%; overflow: visible; }
+.hist:focus-visible { outline-offset: 6px; }
+.axis text, .lbl { fill: var(--ink-3); font-size: 11.5px; font-family: var(--sans); font-variant-numeric: tabular-nums; }
+.lbl { fill: var(--ink-2); }
+.gridl { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.base { stroke: var(--line-2); stroke-width: 1; shape-rendering: crispEdges; }
+.cost { stroke: var(--ink-3); stroke-width: 1; shape-rendering: crispEdges; }
+.bin { cursor: pointer; }
+.bin .b { transition: opacity .12s; }
+.hist.hovering .bin .b, .hist.picked .bin .b { opacity: .4; }
+.hist.hovering .bin.on .b, .hist.picked .bin.sel .b { opacity: 1; }
+.bin rect.hitb { fill: transparent; }
+.dist-note { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-3); }
 
-/* 表格容器 */
-.table-wrap {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 8px 12px;
-  overflow-x: auto;
-}
+.controls { position: sticky; top: 56px; z-index: 15; background: var(--bg); border-bottom: 1px solid var(--line); }
+.controls .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding-top: 14px; padding-bottom: 14px; }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--radius); padding: 2px; gap: 2px; }
+.seg button { border: 0; background: none; height: 28px; padding: 0 11px; border-radius: 4px; font-size: 13px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.seg button:hover { color: var(--ink); background: var(--bg-2); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.seg button small { margin-left: 4px; opacity: .7; font-variant-numeric: tabular-nums; }
+.search { flex: 1; min-width: 160px; max-width: 260px; height: 34px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--bg); font-size: 13.5px; }
+.search::placeholder { color: var(--ink-3); }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 6px 0 10px; border-radius: var(--radius); background: var(--bg-2); font-size: 13px; color: var(--ink-2); }
+.chip button { border: 0; background: none; cursor: pointer; color: var(--ink-3); height: 24px; padding: 0 6px; border-radius: 4px; }
+.chip button:hover { color: var(--ink); background: var(--bg-3); }
+.count { margin-left: auto; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-/* 表格 */
-.tbl {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.95rem;
-}
-.tbl th, .tbl td {
-  padding: 6px 8px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.tbl th {
-  background: var(--bg2);
-  color: var(--fg2);
-  font-weight: 500;
-  font-size: 0.85rem;
-  position: sticky;
-  top: var(--header-height);
-  z-index: 10;
-  cursor: pointer;
-  user-select: none;
-}
-.tbl th:hover { color: var(--fg); }
-.tbl th.sorted { color: var(--blue); }
-.tbl th .arr { margin-left: 3px; font-size: 0.7rem; }
-.tbl tbody tr { transition: background 0.1s; }
-.tbl tbody tr:hover { background: var(--hover); }
-.tbl tbody tr.hl { background: rgba(63,185,80,0.08); }
-.tbl tbody tr.hl:hover { background: rgba(63,185,80,0.12); }
+.list { padding: 8px 0 40px; transition: opacity .15s; }
+.list.busy { opacity: .5; }
+table.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { text-align: right; font-weight: 500; font-size: 12.5px; color: var(--ink-3); padding: 14px 10px 10px; border-bottom: 1px solid var(--ink); white-space: nowrap; }
+.tbl th:first-child { text-align: left; padding-left: 0; }
+.tbl th button { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.tbl th button:hover { color: var(--ink); }
+.tbl th[aria-sort] button { color: var(--ink); }
+.tbl th .arr { font-size: 10px; }
+.tbl td { padding: 13px 10px; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; vertical-align: middle; white-space: nowrap; }
+.tbl td:first-child { text-align: left; padding-left: 0; white-space: normal; }
+.tbl tr.has-h { cursor: pointer; }
+.tbl tr.has-h:hover td, .tbl tr.open td { background: var(--bg-2); }
+.tbl tr.flash td { animation: flash 1.6s ease; }
+@keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--focus) 16%, transparent); } 100% { background: transparent; } }
+.fund { display: grid; gap: 2px; }
+.fund-name { font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.fund-name a { text-decoration: none; }
+.fund-name a:hover { text-decoration: underline; }
+.fund-sub { font-size: 12.5px; color: var(--ink-3); display: flex; gap: 10px; flex-wrap: wrap; }
+.tag { font-size: 11.5px; color: var(--ink-2); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; line-height: 18px; }
+.pr { display: inline-flex; align-items: center; gap: 14px; justify-content: flex-end; }
+.pr-v { font-size: 15.5px; font-weight: 600; min-width: 68px; text-align: right; }
+.mbar { position: relative; height: 10px; width: 64px; }
+.mbar::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line-2); }
+.mbar i { position: absolute; top: 2px; height: 6px; }
+.mbar i.p { left: 50%; background: var(--prem); border-radius: 0 3px 3px 0; }
+.mbar i.d { right: 50%; background: var(--disc); border-radius: 3px 0 0 3px; }
+.net-pos { font-weight: 600; }
+.net-neg { color: var(--ink-3); }
+.pn { font-size: 13.5px; color: var(--ink-2); }
+.c-spark .sp { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0; }
+.spark svg { display: block; }
+.spark-line { fill: none; stroke: var(--ink-3); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.spark-end { fill: var(--ink); stroke: var(--bg); stroke-width: 2; }
+.chev { display: inline-block; width: 8px; height: 8px; border-right: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); transform: rotate(45deg) translate(-2px, -2px); margin-left: 10px; transition: transform .18s; }
+tr.open .chev { transform: rotate(-135deg) translate(-2px, -2px); }
+tr.detail td { background: var(--bg-2); padding: 4px 16px 20px; text-align: left; white-space: normal; }
+tr.detail td:first-child { padding-left: 16px; }
+.dh { display: flex; flex-wrap: wrap; gap: 6px 28px; font-size: 13px; color: var(--ink-2); padding: 8px 0 6px; }
+.hchart { position: relative; }
+.hchart svg { display: block; width: 100%; overflow: visible; }
+.band { fill: var(--bg-3); }
+.line { fill: none; stroke: var(--series); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.dot { fill: var(--series); stroke: var(--bg-2); stroke-width: 2; }
+.cross { stroke: var(--ink-3); stroke-width: 1; shape-rendering: crispEdges; }
+.more { display: flex; justify-content: center; padding: 20px 0 0; }
+.empty { padding: 48px 0; text-align: center; color: var(--ink-3); font-size: 14px; }
 
-/* 列对齐 */
-.r { text-align: right; }
-.c { text-align: center; }
-.mono { font-family: 'SF Mono', Monaco, Consolas, monospace; }
+.state { padding: clamp(48px, 10vw, 120px) 0; display: grid; justify-items: start; gap: 14px; max-width: 520px; }
+.state h2 { margin: 0; font-size: 22px; font-weight: 650; }
+.state p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+.progress { width: 100%; height: 6px; border-radius: 3px; background: var(--bg-3); overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--series); border-radius: 3px; transition: width .4s; }
 
-/* 排名 */
-.rank {
-  color: var(--fg3);
-  font-weight: 500;
-  width: 32px;
+.foot { padding: 32px 0 calc(48px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12.5px; line-height: 1.8; }
+.foot p { margin: 0; }
+
+.tip { position: fixed; z-index: 50; pointer-events: none; min-width: 140px; max-width: 280px; padding: 9px 11px; background: var(--ink); color: var(--bg); border-radius: var(--radius); font-size: 12.5px; line-height: 1.55; box-shadow: 0 6px 24px rgb(0 0 0 / .16); }
+.tip b { display: block; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tip span { display: block; opacity: .75; }
+.tip[hidden] { display: none; }
+
+@media (max-width: 960px) {
+  .hero { grid-template-columns: 1fr; }
 }
-.rank.top { color: var(--yellow); font-weight: 700; }
-
-/* 代码链接 */
-.code-link { color: var(--blue); text-decoration: none; }
-.code-link:hover { text-decoration: underline; }
-
-/* 基金名 */
-.fund-name {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--fg2);
+@media (max-width: 760px) {
+  body { font-size: 14.5px; }
+  .bar .wrap { height: 52px; gap: 12px; }
+  .controls { position: static; }
+  .controls .wrap { gap: 8px; padding-top: 10px; padding-bottom: 10px; }
+  .search { max-width: none; order: 3; flex-basis: 100%; }
+  .count { order: 4; margin-left: 0; }
+  .hide-sm { display: none; }
+  table.tbl, .tbl tbody { display: block; }
+  .tbl thead { display: none; }
+  .tbl tr.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "fund prem" "sub net"; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .tbl tr.row td { display: block; padding: 0; border: 0; background: none !important; }
+  .tbl tr.row td.c-fund { grid-area: fund; }
+  .tbl tr.row td.c-prem { grid-area: prem; }
+  .tbl tr.row td.c-net { grid-area: net; font-size: 12.5px; color: var(--ink-3); }
+  .tbl tr.row td.c-net::before { content: "扣费后 "; }
+  .tbl tr.row td.c-pn { grid-area: sub; text-align: left; font-size: 12.5px; }
+  .tbl tr.row td.c-date, .tbl tr.row td.c-chg, .tbl tr.row td.c-spark { display: none; }
+  .tbl tr.detail { display: block; }
+  .tbl tr.detail td { display: block; padding: 4px 12px 16px; }
+  .pr { gap: 0; }
+  .mbar { display: none; }
+  .facts { grid-template-columns: 1fr 1fr; gap: 12px 16px; }
 }
-
-/* 标签 */
-.tag {
-  display: inline-block;
-  font-size: 0.7rem;
-  padding: 1px 4px;
-  border-radius: 2px;
-  font-weight: 500;
-  margin-left: 4px;
-  vertical-align: middle;
-}
-.tag.q { background: rgba(163,113,247,0.2); color: var(--purple); }
-.tag.c { background: rgba(210,153,34,0.2); color: var(--yellow); }
-.tag.delay { background: rgba(139,148,158,0.15); color: var(--fg3); font-size: 0.65rem; }
-
-/* 数值颜色 */
-.pos { color: var(--green); }
-.neg { color: var(--red); }
-.zero { color: var(--fg3); }
-
-/* 溢价率突出 */
-.prem-cell {
-  font-weight: 700;
-  font-size: 1.05rem;
-}
-
-/* 净收益 */
-.profit-cell {
-  font-weight: 600;
-}
-
-/* 迷你趋势图 */
-.spark {
-  width: 60px;
-  height: 20px;
-  vertical-align: middle;
-}
-
-/* 展开按钮 */
-.more-row td {
-  text-align: center;
-  padding: 12px;
-}
-.btn-more {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  color: var(--fg2);
-  padding: 6px 20px;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-.btn-more:hover { border-color: var(--blue); color: var(--fg); }
-
-/* 加载 */
-.loading {
-  position: fixed;
-  inset: 0;
-  background: var(--bg);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;
-  z-index: 200;
-}
-.loading.hide { display: none; }
-.spin {
-  width: 24px;
-  height: 24px;
-  border: 2px solid var(--border);
-  border-top-color: var(--blue);
-  border-radius: 50%;
-  animation: sp 0.6s linear infinite;
-}
-@keyframes sp { to { transform: rotate(360deg); } }
-.loading-t { color: var(--fg2); font-size: 0.9rem; }
-.err { padding: 40px; text-align: center; color: var(--red); }
-
-/* tooltip */
-.tip {
-  position: fixed;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-size: 0.85rem;
-  pointer-events: none;
-  z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  max-width: 280px;
-}
-.tip.hide { display: none; }
-.tip-row { display: flex; justify-content: space-between; gap: 12px; margin: 2px 0; }
-.tip-row .lb { color: var(--fg3); }
-.tip-row .vl { font-weight: 500; font-variant-numeric: tabular-nums; }
-
-/* 响应式列隐藏 - 默认全部隐藏低优先级列 */
-.hide-sm, .hide-md { display: none; }
-
-/* 小屏手机 (<480px) - 只显示核心列 */
-@media (max-width: 479px) {
-  html { font-size: 10px; }
-  .header { padding: 6px 8px; }
-  .header-top { flex-direction: column; align-items: flex-start; gap: 6px; }
-  .stats-row { gap: 6px; flex-wrap: wrap; }
-  .stat-card { padding: 4px 8px; min-width: 70px; flex: 1; }
-  .stat-card .value { font-size: 1rem; }
-  .stat-card .sub { display: none; }
-  .table-wrap { padding: 2px 4px; }
-  .tbl { font-size: 0.85rem; }
-  .tbl th, .tbl td { padding: 4px 4px; }
-  .fund-name { max-width: 80px; }
-  .tag { font-size: 0.6rem; padding: 0 2px; }
-}
-
-/* 移动端 (480px - 767px) */
-@media (min-width: 480px) and (max-width: 767px) {
-  html { font-size: 11px; }
-  .header { padding: 8px 10px; }
-  .header-top { flex-direction: column; align-items: flex-start; gap: 8px; }
-  .stats-row { gap: 8px; }
-  .stat-card { padding: 6px 10px; min-width: 80px; }
-  .stat-card .value { font-size: 1.1rem; }
-  .table-wrap { padding: 4px 6px; }
-  .tbl { font-size: 0.9rem; }
-  .fund-name { max-width: 100px; }
-}
-
-/* 平板 (768px - 899px) - 显示中优先级列 */
-@media (min-width: 768px) {
-  .hide-sm { display: table-cell; }
-  .fund-name { max-width: 140px; }
-}
-
-/* 桌面 (>=900px) - 显示全部列 */
-@media (min-width: 900px) {
-  .hide-md { display: table-cell; }
-  .fund-name { max-width: 180px; }
-}
-
-/* 亮色模式 */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #fff; --bg2: #f6f8fa; --bg3: #eaeef2; --fg: #1f2328; --fg2: #656d76; --fg3: #8b949e;
-    --border: #d0d7de; --green: #1a7f37; --red: #cf222e; --blue: #0969da; --yellow: #9a6700; --purple: #8250df;
-    --hover: #f3f4f6;
-  }
-  .tip { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-
-<header class="header">
-  <div class="header-inner">
-    <div class="header-top">
-      <div class="logo">
-        <h1>LOF溢价监控</h1>
-      </div>
-      <div class="header-actions">
-        <button class="btn-sm" id="btnAll">全部</button>
-        <button class="btn-sm active" id="btnPrem">仅溢价</button>
-        <button class="btn-sm" id="btnRefresh">刷新</button>
-      </div>
-    </div>
-    <div class="stats-row">
-      <div class="stat-card">
-        <div class="label">净值日期</div>
-        <div class="value hl" id="navDate">-</div>
-        <div class="sub">T-1交易日</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">溢价基金</div>
-        <div class="value" id="premCnt">-</div>
-        <div class="sub" id="totalCnt">共 - 只</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">最高溢价</div>
-        <div class="value pos" id="maxPrem">-</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">套利成本</div>
-        <div class="value" id="arbCost">-</div>
-        <div class="sub">溢价/折价</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">数据更新</div>
-        <div class="value" id="updateTime">-</div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<div class="table-wrap">
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th class="c" data-key="rank">#</th>
-        <th data-key="code">代码</th>
-        <th data-key="name">名称</th>
-        <th class="r hide-md" data-key="marketPrice">市价</th>
-        <th class="r hide-md" data-key="nav">净值</th>
-        <th class="r" data-key="premiumRate">溢价率<span class="arr">▼</span></th>
-        <th class="r hide-sm" data-key="netProfit">净收益</th>
-        <th class="r hide-md" data-key="changePercent">涨跌</th>
-        <th class="c hide-md">趋势</th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
-</div>
-
-<div class="tip hide" id="tip"></div>
-<div class="loading" id="ld"><div class="spin"></div><span class="loading-t">加载数据中...</span></div>
-
+<header class="bar"><div class="wrap">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span>LOF 溢价</div>
+  <div class="meta" id="meta">正在读取数据</div>
+  <button class="btn" id="refresh" type="button">刷新</button>
+</div></header>
+<main id="main">
+  <div class="wrap"><div class="state" id="boot"><p>正在读取数据…</p></div></div>
+</main>
+<footer class="foot"><div class="wrap">
+  <p>市价与列表来自新浪行情，基金净值来自东方财富；约每 6 小时重新计算一轮。</p>
+  <p>溢价率 = (净值日收盘价 − 单位净值) / 单位净值。扣费后按溢价套利成本 0.16%、折价套利成本 0.51% 估算，未检查申购赎回状态、限额与成交量。仅供研究，不构成投资建议。</p>
+</div></footer>
+<div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
-const $=id=>document.getElementById(id);
-const N=30;
-let allData=[],filtered=[],expanded=false,sortKey='premiumRate',sortAsc=false,showAll=false;
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var NS = 'http://www.w3.org/2000/svg';
+  var S = { d: null, view: 'arb', type: 'all', q: '', range: null, sort: null, limit: 50, open: {}, busy: false, poll: 0 };
+  var VIEWS = [['arb', '可套利'], ['prem', '溢价'], ['disc', '折价'], ['all', '全部']];
+  var TYPES = [['all', '全部类型'], ['normal', '普通'], ['qdii', 'QDII'], ['commodity', '商品']];
+  var DEFAULT_SORT = { arb: ['net', -1], prem: ['prem', -1], disc: ['prem', 1], all: ['prem', -1] };
+  var COLS = [
+    ['fund', '基金', null], ['prem', '溢价率', 'premiumRate'], ['net', '扣费后', 'netProfit'],
+    ['pn', '收盘价 / 净值', null], ['date', '净值日期', 'navDate'], ['chg', '当日涨跌', 'changePercent'], ['spark', '近 10 日溢价', null]
+  ];
+  var LO = -3.5, HI = 9, STEP = 0.25;
 
-// 迷你趋势图
-function spark(d,code){
-  if(!d||d.length<2)return'<span style="color:var(--fg3)">-</span>';
-  const W=60,H=20,vals=d.map(x=>x.premiumRate);
-  let mn=Math.min(0,...vals),mx=Math.max(0,...vals);
-  const mg=(mx-mn)*0.1||0.2;mn-=mg;mx+=mg;
-  const rg=mx-mn;
-  const pts=vals.map((v,i)=>[2+(i/(vals.length-1))*(W-4),2+(1-(v-mn)/rg)*(H-4)]);
-  const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
-  const last=vals[vals.length-1];
-  const col=last>=0?'var(--green)':'var(--red)';
-  return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" data-code="'+code+'">'+
-    '<path d="'+path+'" fill="none" stroke="'+col+'" stroke-width="1.5" stroke-linecap="round"/>'+
-    '<circle cx="'+pts[pts.length-1][0]+'" cy="'+pts[pts.length-1][1]+'" r="2" fill="'+col+'"/>'+
-  '</svg>';
-}
-
-// 格式化
-const fmtPct=(v,sign)=>{
-  if(v==null||isNaN(v))return'-';
-  const s=(sign!==false)&&v>0?'+':'';
-  return s+v.toFixed(2)+'%';
-};
-const fmtPrice=v=>v==null||isNaN(v)?'-':v.toFixed(4);
-const cls=v=>v>0?'pos':(v<0?'neg':'zero');
-
-// 转义HTML
-const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-
-// 渲染表格
-function render(){
-  const list=expanded?filtered:filtered.slice(0,N);
-  if(!filtered.length){
-    $('tbody').innerHTML='<tr><td colspan="9" class="err">暂无数据</td></tr>';
-    return;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function sgn(v) { return v > 0 ? '+' : v < 0 ? '−' : ''; }
+  function pct(v, d) { if (v == null || isNaN(v)) return '—'; return sgn(v) + Math.abs(v).toFixed(d == null ? 2 : d) + '%'; }
+  function num(v, d) { return v == null || isNaN(v) ? '—' : Number(v).toFixed(d); }
+  function bj(iso) {
+    var t = new Date(iso); if (isNaN(t.getTime())) return '—';
+    return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(t).replace('/', '-');
   }
+  function costs() { var c = (S.d && S.d.arbitrageCosts) || {}; return { p: c.premium != null ? c.premium : 0.16, d: c.discount != null ? c.discount : 0.51 }; }
+  function funds() { return (S.d && (S.d.allFunds || S.d.topPremiumFunds)) || []; }
+  function isArb(f) { return f.netProfit > 0; }
+  function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 
-  const rows=list.map((f,i)=>{
-    const url='https://fund.eastmoney.com/'+esc(f.code)+'.html';
-    const rkCls=i<3?'top':'';
-    const hlCls=f.premiumRate>=1?'hl':'';
-
-    let tags='';
-    if(f.fundType==='qdii')tags='<span class="tag q">QDII</span>';
-    else if(f.fundType==='commodity')tags='<span class="tag c">商品</span>';
-    if(f.navDelayDays>0)tags+='<span class="tag delay">T-'+(f.navDelayDays+1)+'</span>';
-
-    return '<tr class="'+hlCls+'" data-code="'+esc(f.code)+'">'+
-      '<td class="c rank '+rkCls+'">'+(i+1)+'</td>'+
-      '<td class="mono"><a class="code-link" href="'+url+'" target="_blank">'+esc(f.code)+'</a></td>'+
-      '<td><span class="fund-name">'+esc(f.name)+'</span>'+tags+'</td>'+
-      '<td class="r mono hide-md">'+fmtPrice(f.marketPrice)+'</td>'+
-      '<td class="r mono hide-md">'+fmtPrice(f.nav)+'</td>'+
-      '<td class="r mono prem-cell '+cls(f.premiumRate)+'">'+fmtPct(f.premiumRate)+'</td>'+
-      '<td class="r mono profit-cell hide-sm '+cls(f.netProfit)+'">'+fmtPct(f.netProfit)+'</td>'+
-      '<td class="r mono hide-md '+cls(f.changePercent)+'">'+fmtPct(f.changePercent)+'</td>'+
-      '<td class="c hide-md">'+spark(f.premiumHistory,f.code)+'</td>'+
-    '</tr>';
-  });
-
-  // 展开按钮
-  if(filtered.length>N){
-    rows.push('<tr class="more-row"><td colspan="9"><button class="btn-more" id="btnMore">'+(expanded?'收起':'展开全部 ('+filtered.length+'只)')+'</button></td></tr>');
+  var tip = $('tip');
+  function showTip(html, x, y) {
+    tip.innerHTML = html; tip.hidden = false;
+    var r = tip.getBoundingClientRect(), left = x + 14, top = y - r.height - 12;
+    if (left + r.width > innerWidth - 8) left = x - r.width - 14;
+    if (left < 8) left = 8;
+    if (top < 8) top = y + 18;
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
   }
+  function hideTip() { tip.hidden = true; }
+  addEventListener('scroll', hideTip, { passive: true });
 
-  $('tbody').innerHTML=rows.join('');
-
-  if($('btnMore')){
-    $('btnMore').onclick=()=>{expanded=!expanded;render();if(!expanded)window.scrollTo({top:0,behavior:'smooth'});};
-  }
-
-  bindSparkTip();
-  // 渲染后更新表头位置
-  updateHeaderHeight();
-}
-
-// 动态计算header高度并更新CSS变量
-function updateHeaderHeight(){
-  const header=document.querySelector('.header');
-  if(header){
-    // 使用 offsetHeight 获取实际高度
-    const h=header.offsetHeight;
-    console.log('Header height:',h);
-    document.documentElement.style.setProperty('--header-height',h+'px');
-    // 同时更新所有 th 的 top 值作为备用
-    document.querySelectorAll('.tbl th').forEach(th=>{
-      th.style.top=h+'px';
+  /* ---------- 数据读取 ---------- */
+  function load(manual) {
+    if (S.busy) return;
+    S.busy = true;
+    $('refresh').disabled = true;
+    var list = document.querySelector('.list');
+    if (list) list.classList.add('busy');
+    fetch('/data?top=500', { cache: 'no-store' }).then(function (r) {
+      return r.text().then(function (t) { var j = null; try { j = JSON.parse(t); } catch (e) {} return { status: r.status, j: j }; });
+    }).then(function (res) {
+      if (res.status === 200 && res.j && (res.j.allFunds || res.j.topPremiumFunds)) {
+        S.d = res.j; clearTimeout(S.poll); renderAll();
+      } else if (res.status === 503 && res.j && res.j.progress) {
+        if (S.d) { renderAll(); } else { renderComputing(res.j.progress); }
+        clearTimeout(S.poll); S.poll = setTimeout(load, 60000);
+      } else {
+        throw new Error('HTTP ' + res.status);
+      }
+      if (manual && S.d) flashMeta();
+    }).catch(function (e) {
+      if (!S.d) renderError(e.message);
+    }).then(function () {
+      S.busy = false; $('refresh').disabled = false;
+      var l = document.querySelector('.list'); if (l) l.classList.remove('busy');
     });
   }
-}
-// 监听窗口变化时更新header高度
-window.addEventListener('resize',updateHeaderHeight);
-// 页面加载完成后更新
-window.addEventListener('load',updateHeaderHeight);
-// 初始化时更新
-requestAnimationFrame(updateHeaderHeight);
+  function flashMeta() { var m = $('meta'); m.style.color = 'var(--ink)'; setTimeout(function () { m.style.color = ''; }, 900); }
 
-// 趋势图tooltip
-function bindSparkTip(){
-  const tip=$('tip');
-  document.querySelectorAll('.spark').forEach(svg=>{
-    svg.onmouseenter=e=>{
-      const code=svg.dataset.code;
-      const fund=allData.find(f=>f.code===code);
-      if(!fund||!fund.premiumHistory||fund.premiumHistory.length<2)return;
-      const h=fund.premiumHistory;
-      const first=h[0],last=h[h.length-1];
-      const change=last.premiumRate-first.premiumRate;
-      const max=Math.max(...h.map(x=>x.premiumRate));
-      const min=Math.min(...h.map(x=>x.premiumRate));
-      tip.innerHTML=
-        '<div class="tip-row"><span class="lb">期间</span><span class="vl">'+esc(first.date)+' ~ '+esc(last.date)+'</span></div>'+
-        '<div class="tip-row"><span class="lb">起始</span><span class="vl">'+fmtPct(first.premiumRate,false)+'</span></div>'+
-        '<div class="tip-row"><span class="lb">当前</span><span class="vl '+cls(last.premiumRate)+'">'+fmtPct(last.premiumRate)+'</span></div>'+
-        '<div class="tip-row"><span class="lb">变化</span><span class="vl '+cls(change)+'">'+fmtPct(change)+'</span></div>'+
-        '<div class="tip-row"><span class="lb">最高</span><span class="vl">'+fmtPct(max,false)+'</span></div>'+
-        '<div class="tip-row"><span class="lb">最低</span><span class="vl">'+fmtPct(min,false)+'</span></div>';
-      tip.classList.remove('hide');
-      const r=svg.getBoundingClientRect();
-      // 视口边界检测
-      const tipW=280,tipH=150;
-      let left=r.right+8,top=r.top-20;
-      // 右边界检测：如果超出则放到左边
-      if(left+tipW>window.innerWidth){
-        left=r.left-tipW-8;
-      }
-      // 左边界检测
-      if(left<8)left=8;
-      // 上边界检测
-      if(top<8)top=8;
-      // 下边界检测
-      if(top+tipH>window.innerHeight){
-        top=window.innerHeight-tipH-8;
-      }
-      tip.style.left=left+'px';
-      tip.style.top=top+'px';
-    };
-    svg.onmouseleave=()=>tip.classList.add('hide');
-  });
-}
-
-// 排序
-function sortData(){
-  filtered.sort((a,b)=>{
-    let va=a[sortKey],vb=b[sortKey];
-    if(typeof va==='string')va=va.toLowerCase();
-    if(typeof vb==='string')vb=vb.toLowerCase();
-    if(va==null)return 1;
-    if(vb==null)return -1;
-    return sortAsc?(va>vb?1:-1):(va<vb?1:-1);
-  });
-}
-
-// 筛选
-function filterData(){
-  filtered=showAll?[...allData]:allData.filter(f=>f.premiumRate>0);
-  sortData();
-  expanded=false;
-  render();
-}
-
-// 表头点击排序
-document.querySelectorAll('.tbl th[data-key]').forEach(th=>{
-  th.onclick=()=>{
-    const key=th.dataset.key;
-    if(key==='rank')return;
-    if(sortKey===key)sortAsc=!sortAsc;
-    else{sortKey=key;sortAsc=false;}
-    document.querySelectorAll('.tbl th').forEach(t=>{t.classList.remove('sorted');const a=t.querySelector('.arr');if(a)a.remove();});
-    th.classList.add('sorted');
-    const span=document.createElement('span');
-    span.className='arr';
-    span.textContent=sortAsc?'▲':'▼';
-    th.appendChild(span);
-    sortData();
-    render();
-  };
-});
-
-// 按钮事件
-$('btnAll').onclick=()=>{showAll=true;$('btnAll').classList.add('active');$('btnPrem').classList.remove('active');filterData();};
-$('btnPrem').onclick=()=>{showAll=false;$('btnPrem').classList.add('active');$('btnAll').classList.remove('active');filterData();};
-$('btnRefresh').onclick=()=>load();
-
-// 加载数据
-async function load(){
-  $('ld').classList.remove('hide');
-  try{
-    const r=await fetch('/data?top=200');
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const j=await r.json();
-    allData=j.topPremiumFunds||[];
-
-    // 更新统计
-    $('navDate').textContent=j.mostCommonNavDate||'-';
-    $('premCnt').textContent=j.premiumFundCount+'只';
-    $('totalCnt').textContent='共 '+j.successCount+' 只';
-    const maxP=allData.length?Math.max(...allData.map(f=>f.premiumRate)):0;
-    $('maxPrem').textContent=fmtPct(maxP);
-    if(j.arbitrageCosts){
-      $('arbCost').textContent=j.arbitrageCosts.premium+'% / '+j.arbitrageCosts.discount+'%';
-    }
-    const t=j._cache&&j._cache.cachedAt?new Date(j._cache.cachedAt).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}):'-';
-    $('updateTime').textContent=t;
-
-    filterData();
-    // 数据加载后更新header高度
-    updateHeaderHeight();
-  }catch(e){
-    $('tbody').innerHTML='<tr><td colspan="9" class="err">加载失败: '+e.message+'</td></tr>';
-  }finally{
-    $('ld').classList.add('hide');
-    updateHeaderHeight();
+  function renderComputing(p) {
+    var pctDone = p.totalBatches ? Math.round(p.currentBatch / p.totalBatches * 100) : 0;
+    var left = Math.max(0, (p.totalBatches - p.currentBatch) * 2);
+    $('meta').textContent = '数据计算中';
+    $('main').innerHTML = '<div class="wrap"><div class="state"><h2>数据正在计算</h2><p>一轮计算分 ' + esc(p.totalBatches) + ' 批，每 2 分钟完成一批。现在是第 ' + esc(p.currentBatch) + ' 批，大约还要 ' + left + ' 分钟。</p><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pctDone + '"><i style="width:' + pctDone + '%"></i></div><p class="sub">这个页面会每分钟自动再试一次。</p></div></div>';
   }
-}
+  function renderError(msg) {
+    $('meta').textContent = '读取失败';
+    $('main').innerHTML = '<div class="wrap"><div class="state"><h2>数据暂时读不到</h2><p>' + esc(msg) + '。可以稍后再刷新一次。</p><button class="btn" type="button" id="retry">重新读取</button></div></div>';
+    $('retry').onclick = function () { load(true); };
+  }
 
-load();
+  /* ---------- 整页 ---------- */
+  function renderAll() {
+    var d = S.d, all = funds(), c = costs();
+    if (!S.sort) S.sort = DEFAULT_SORT[S.view].slice();
+    $('meta').textContent = '净值 ' + (d.mostCommonNavDate || '—') + ' · 计算于 ' + (d._cache && d._cache.cachedAt ? bj(d._cache.cachedAt) : bj(d.executionTime)) + ' · ' + all.length + ' 只';
+    var first = !document.querySelector('.hero');
+    if (first) {
+      $('main').innerHTML = '<div class="wrap"><section class="hero" id="hero"></section></div>' +
+        '<div class="controls" id="controls"></div><div class="wrap"><section class="list" id="list" aria-live="polite"></section></div>';
+    }
+    renderHero(all, c);
+    renderControls();
+    renderList();
+  }
+
+  function renderHero(all, c) {
+    var arbP = all.filter(function (f) { return f.premiumRate > 0 && f.netProfit > 0; }).length;
+    var arbD = all.filter(function (f) { return f.premiumRate < 0 && f.netProfit > 0; }).length;
+    var rest = all.length - arbP - arbD;
+    var top = all.slice().sort(function (a, b) { return b.premiumRate - a.premiumRate; })[0];
+    var low = all.slice().sort(function (a, b) { return a.premiumRate - b.premiumRate; })[0];
+    var delayed = all.filter(function (f) { return f.navDelayDays > 1; }).length;
+    var h = '<div>' +
+      '<p class="eyebrow">场内 LOF · 净值日期 ' + esc(S.d.mostCommonNavDate || '—') + '</p>' +
+      '<p class="big">' + (arbP + arbD) + '</p>' +
+      '<p class="big-label">只基金扣除成本后仍有价差</p>' +
+      '<div class="split" aria-hidden="true"><span style="flex:' + arbP + ';background:var(--prem)"></span><span style="flex:' + rest + ';background:var(--flat)"></span><span style="flex:' + arbD + ';background:var(--disc)"></span></div>' +
+      '<div class="split-legend"><span class="key" style="--k:var(--prem)">溢价 ' + arbP + '</span><span class="key" style="--k:var(--flat)">成本以内 ' + rest + '</span><span class="key" style="--k:var(--disc)">折价 ' + arbD + '</span></div>' +
+      '<dl class="facts">' +
+      (top ? '<div><dt>最高溢价</dt><dd><button type="button" data-find="' + esc(top.code) + '">' + esc(top.name) + '</button> ' + pct(top.premiumRate) + '</dd></div>' : '') +
+      (low ? '<div><dt>最深折价</dt><dd><button type="button" data-find="' + esc(low.code) + '">' + esc(low.name) + '</button> ' + pct(low.premiumRate) + '</dd></div>' : '') +
+      '<div><dt>套利成本</dt><dd>溢价 ' + c.p + '% · 折价 ' + c.d + '%</dd></div>' +
+      '<div><dt>净值晚一天以上</dt><dd>' + delayed + ' 只<span class="sub"> · 多为 QDII</span></dd></div>' +
+      '</dl></div>' +
+      '<figure class="dist"><figcaption><b>全部 ' + all.length + ' 只的溢价率分布</b><span>每格 0.25%，点击一格筛选下方列表</span></figcaption>' +
+      '<div class="hist" id="hist" tabindex="0" aria-label="溢价率分布直方图，可用左右方向键逐格查看，回车筛选"></div>' +
+      '<p class="dist-note" id="dist-note"></p></figure>';
+    $('hero').innerHTML = h;
+    drawHist(all, c);
+  }
+
+  /* ---------- 分布直方图 ---------- */
+  function bins(all) {
+    var n = Math.round((HI - LO) / STEP), out = [], k;
+    for (k = 0; k < n; k++) out.push({ lo: LO + k * STEP, hi: LO + (k + 1) * STEP, f: [] });
+    var over = [], under = [];
+    all.forEach(function (f) {
+      var v = f.premiumRate;
+      if (v >= HI) over.push(f); else if (v < LO) under.push(f);
+      else out[Math.min(n - 1, Math.floor((v - LO) / STEP + 1e-9))].f.push(f);
+    });
+    return { b: out, over: over, under: under };
+  }
+  function binColor(b, c) {
+    if (b.lo >= c.p) return 'var(--prem)';
+    if (b.hi <= -c.d) return 'var(--disc)';
+    return 'var(--flat)';
+  }
+  function drawHist(all, c) {
+    var box = $('hist'), w = Math.max(280, box.clientWidth), h = w < 520 ? 190 : 230;
+    var m = { t: 26, r: 8, b: 26, l: 30 };
+    var B = bins(all), maxN = Math.max.apply(null, B.b.map(function (b) { return b.f.length; }).concat([1]));
+    var yStep = maxN > 60 ? 20 : maxN > 30 ? 10 : 5, yMax = Math.ceil(maxN / yStep) * yStep;
+    var X = function (v) { return m.l + (v - LO) / (HI - LO) * (w - m.l - m.r); };
+    var Y = function (n) { return m.t + (1 - n / yMax) * (h - m.t - m.b); };
+    var bw = (w - m.l - m.r) / B.b.length, barW = Math.min(24, bw - 2);
+    var s = '<svg viewBox="0 0 ' + w + ' ' + h + '" height="' + h + '" role="img" aria-label="溢价率分布">';
+    for (var t = 0; t <= yMax; t += yStep) s += '<line class="gridl" x1="' + m.l + '" x2="' + (w - m.r) + '" y1="' + Y(t) + '" y2="' + Y(t) + '"/><text class="axis" x="' + (m.l - 8) + '" y="' + (Y(t) + 4) + '" text-anchor="end" fill="var(--ink-3)" font-size="11.5">' + t + '</text>';
+    var xs = w < 520 ? [-3, 0, 3, 6, 9] : [-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    s += '<g class="axis">' + xs.map(function (v) { return '<text x="' + X(v) + '" y="' + (h - 6) + '" text-anchor="middle">' + (v === 0 ? '0' : sgn(v) + Math.abs(v) + '%') + '</text>'; }).join('') + '</g>';
+    s += '<line class="base" x1="' + X(0) + '" x2="' + X(0) + '" y1="' + (m.t - 4) + '" y2="' + (h - m.b) + '"/>';
+    B.b.forEach(function (b, k) {
+      var n = b.f.length, x = m.l + k * bw + (bw - barW) / 2, y = Y(n), hh = h - m.b - y;
+      var path = n ? 'M' + x + ' ' + (h - m.b) + 'V' + (y + Math.min(4, hh)) + 'Q' + x + ' ' + y + ' ' + (x + Math.min(4, barW / 2)) + ' ' + y + 'H' + (x + barW - Math.min(4, barW / 2)) + 'Q' + (x + barW) + ' ' + y + ' ' + (x + barW) + ' ' + (y + Math.min(4, hh)) + 'V' + (h - m.b) + 'Z' : '';
+      s += '<g class="bin" data-k="' + k + '">' + (n ? '<path class="b" d="' + path + '" fill="' + binColor(b, c) + '"/>' : '') + '<rect class="hitb" x="' + (m.l + k * bw) + '" y="' + m.t + '" width="' + bw + '" height="' + (h - m.t - m.b) + '"/></g>';
+    });
+    s += '<line class="cost" x1="' + X(-c.d) + '" x2="' + X(-c.d) + '" y1="' + (m.t - 8) + '" y2="' + (h - m.b) + '"/><line class="cost" x1="' + X(c.p) + '" x2="' + X(c.p) + '" y1="' + (m.t - 8) + '" y2="' + (h - m.b) + '"/>';
+    s += '<text class="lbl" x="' + (X(-c.d) - 5) + '" y="' + (m.t - 12) + '" text-anchor="end">折价成本 ' + c.d + '%</text><text class="lbl" x="' + (X(c.p) + 5) + '" y="' + (m.t - 12) + '" text-anchor="start">溢价成本 ' + c.p + '%</text>';
+    s += '</svg>';
+    box.innerHTML = s;
+    var note = [];
+    if (B.over.length) note.push('超出右边界：' + B.over.map(function (f) { return f.name + ' ' + pct(f.premiumRate); }).join('、'));
+    if (B.under.length) note.push('超出左边界：' + B.under.map(function (f) { return f.name + ' ' + pct(f.premiumRate); }).join('、'));
+    $('dist-note').textContent = note.join('；');
+    var groups = box.querySelectorAll('.bin'), cur = -1;
+    function focusBin(k, x, y) {
+      cur = k;
+      box.classList.add('hovering');
+      groups.forEach(function (g) { g.classList.toggle('on', +g.dataset.k === k); });
+      var b = B.b[k], names = b.f.slice().sort(function (a, z) { return Math.abs(z.premiumRate) - Math.abs(a.premiumRate); }).slice(0, 3).map(function (f) { return esc(f.name); });
+      var r = groups[k].getBoundingClientRect();
+      showTip('<b>' + b.f.length + ' 只</b><span>溢价率 ' + pct(b.lo) + ' 至 ' + pct(b.hi) + '</span>' + (names.length ? '<span>' + names.join('、') + (b.f.length > 3 ? ' 等' : '') + '</span>' : ''), x == null ? r.left + r.width / 2 : x, y == null ? r.top + 20 : y);
+    }
+    function clear() { cur = -1; box.classList.remove('hovering'); groups.forEach(function (g) { g.classList.remove('on'); }); hideTip(); }
+    groups.forEach(function (g) {
+      var k = +g.dataset.k;
+      g.addEventListener('pointermove', function (e) { focusBin(k, e.clientX, e.clientY); });
+      g.addEventListener('click', function () { if (B.b[k].f.length) pickRange(B.b[k]); });
+    });
+    box.addEventListener('pointerleave', clear);
+    box.onkeydown = function (e) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        var k = cur < 0 ? B.b.findIndex(function (b) { return b.lo >= 0; }) : cur + (e.key === 'ArrowLeft' ? -1 : 1);
+        focusBin(Math.max(0, Math.min(B.b.length - 1, k)));
+      } else if (e.key === 'Enter' && cur >= 0 && B.b[cur].f.length) { pickRange(B.b[cur]); }
+      else if (e.key === 'Escape') clear();
+    };
+    box.onblur = clear;
+    markRange();
+  }
+  function markRange() {
+    var hist = $('hist'); if (!hist) return;
+    hist.classList.toggle('picked', !!S.range);
+    hist.querySelectorAll('.bin').forEach(function (g) {
+      var lo = LO + (+g.dataset.k) * STEP;
+      g.classList.toggle('sel', !!(S.range && Math.abs(S.range[0] - lo) < 1e-9));
+    });
+  }
+  function pickRange(b) {
+    S.range = [b.lo, b.hi]; S.view = 'all'; S.q = ''; S.sort = ['prem', -1]; S.limit = 50;
+    hideTip(); renderControls(); renderList();
+    $('controls').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  /* ---------- 筛选与排序 ---------- */
+  function filtered() {
+    var q = S.q.trim().toLowerCase();
+    return funds().filter(function (f) {
+      if (S.view === 'arb' && !isArb(f)) return false;
+      if (S.view === 'prem' && !(f.premiumRate > 0)) return false;
+      if (S.view === 'disc' && !(f.premiumRate < 0)) return false;
+      if (S.type !== 'all' && f.fundType !== S.type) return false;
+      if (S.range && !(f.premiumRate >= S.range[0] && f.premiumRate < S.range[1])) return false;
+      if (q && f.code.indexOf(q) < 0 && f.name.toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+  function sorted(list) {
+    var key = S.sort[0], dir = S.sort[1];
+    var get = { prem: function (f) { return f.premiumRate; }, net: function (f) { return f.netProfit; }, date: function (f) { return f.navDate; }, chg: function (f) { return f.changePercent; } }[key];
+    return list.slice().sort(function (a, b) { var x = get(a), y = get(b); return x < y ? -dir : x > y ? dir : 0; });
+  }
+  function countFor(view) { var keep = S.view; S.view = view; var n = filtered().length; S.view = keep; return n; }
+
+  function renderControls() {
+    var box = $('controls');
+    var views = VIEWS.map(function (v) { return '<button type="button" data-view="' + v[0] + '" aria-pressed="' + (S.view === v[0]) + '">' + v[1] + '<small>' + countFor(v[0]) + '</small></button>'; }).join('');
+    var types = TYPES.map(function (t) { return '<button type="button" data-type="' + t[0] + '" aria-pressed="' + (S.type === t[0]) + '">' + t[1] + '</button>'; }).join('');
+    var chip = S.range ? '<span class="chip">溢价率 ' + pct(S.range[0]) + ' 至 ' + pct(S.range[1]) + '<button type="button" id="clear-range" aria-label="清除区间筛选">清除</button></span>' : '';
+    var had = document.activeElement && document.activeElement.id === 'q';
+    box.innerHTML = '<div class="wrap"><div class="seg" role="group" aria-label="范围">' + views + '</div><div class="seg" role="group" aria-label="类型">' + types + '</div>' +
+      chip + '<input class="search" id="q" type="search" placeholder="代码或名称" autocomplete="off" value="' + esc(S.q) + '" aria-label="搜索基金"><span class="count" id="count"></span></div>';
+    if (had) { var q = $('q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+    box.querySelectorAll('[data-view]').forEach(function (b) { b.onclick = function () { S.view = b.dataset.view; S.sort = DEFAULT_SORT[S.view].slice(); S.range = null; S.limit = 50; renderControls(); renderList(); }; });
+    box.querySelectorAll('[data-type]').forEach(function (b) { b.onclick = function () { S.type = b.dataset.type; S.limit = 50; renderControls(); renderList(); }; });
+    $('q').oninput = function (e) { S.q = e.target.value; S.limit = 50; renderList(); refreshCounts(); };
+    if ($('clear-range')) $('clear-range').onclick = function () { S.range = null; renderControls(); renderList(); };
+    markRange();
+  }
+  function refreshCounts() { document.querySelectorAll('[data-view]').forEach(function (b) { b.querySelector('small').textContent = countFor(b.dataset.view); }); }
+
+  /* ---------- 列表 ---------- */
+  function mbar(v) {
+    var w = Math.min(Math.abs(v), 3) / 3 * 32;
+    return '<span class="mbar" aria-hidden="true">' + (v ? '<i class="' + (v > 0 ? 'p' : 'd') + '" style="width:' + Math.max(1.5, w).toFixed(1) + 'px"></i>' : '') + '</span>';
+  }
+  function spark(h) {
+    if (!h || h.length < 2) return '<span class="sub">—</span>';
+    var W = 96, H = 26, v = h.map(function (x) { return x.premiumRate; }), lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
+    var X = function (i) { return 3 + i / (v.length - 1) * (W - 6); }, Y = function (x) { return hi === lo ? H / 2 : 3 + (hi - x) / (hi - lo) * (H - 6); };
+    return '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true"><path class="spark-line" d="' + v.map(function (x, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(x).toFixed(1); }).join('') + '"/><circle class="spark-end" cx="' + X(v.length - 1).toFixed(1) + '" cy="' + Y(v[v.length - 1]).toFixed(1) + '" r="3"/></svg>';
+  }
+  function tags(f) {
+    var t = '';
+    if (f.fundType === 'qdii') t += '<span class="tag">QDII</span>';
+    if (f.fundType === 'commodity') t += '<span class="tag">商品</span>';
+    return t;
+  }
+  function rowHtml(f) {
+    var has = f.premiumHistory && f.premiumHistory.length > 1;
+    var delay = f.navDelayDays > 1 ? ' · 净值晚 ' + f.navDelayDays + ' 天' : '';
+    return '<tr class="row' + (has ? ' has-h' : '') + (S.open[f.code] ? ' open' : '') + '" data-code="' + esc(f.code) + '"' + (has ? ' tabindex="0" aria-expanded="' + !!S.open[f.code] + '"' : '') + '>' +
+      '<td class="c-fund"><div class="fund"><span class="fund-name"><a href="https://fund.eastmoney.com/' + esc(f.code) + '.html" target="_blank" rel="noopener noreferrer">' + esc(f.name) + '</a>' + tags(f) + '</span><span class="fund-sub"><span>' + esc(f.code) + '</span><span>' + esc(f.navDate) + delay + '</span></span></div></td>' +
+      '<td class="c-prem"><span class="pr">' + mbar(f.premiumRate) + '<span class="pr-v">' + pct(f.premiumRate) + '</span></span></td>' +
+      '<td class="c-net ' + (f.netProfit > 0 ? 'net-pos' : 'net-neg') + '">' + pct(f.netProfit) + '</td>' +
+      '<td class="c-pn pn">' + num(f.marketPrice, 3) + ' / ' + num(f.nav, 4) + '</td>' +
+      '<td class="c-date pn hide-sm">' + esc(String(f.navDate).slice(5)) + '</td>' +
+      '<td class="c-chg pn">' + pct(f.changePercent) + '</td>' +
+      '<td class="c-spark spark"><span class="sp">' + spark(f.premiumHistory) + '<span class="chev" aria-hidden="true"' + (has ? '' : ' style="visibility:hidden"') + '></span></span></td></tr>' +
+      (has && S.open[f.code] ? '<tr class="detail" data-for="' + esc(f.code) + '"><td colspan="7"></td></tr>' : '');
+  }
+  function renderList() {
+    var list = sorted(filtered()), shown = list.slice(0, S.limit), box = $('list');
+    var head = '<thead><tr>' + COLS.map(function (c) {
+      var sortable = { prem: 1, net: 1, date: 1, chg: 1 }[c[0]];
+      var active = S.sort[0] === c[0];
+      var aria = active ? ' aria-sort="' + (S.sort[1] > 0 ? 'ascending' : 'descending') + '"' : '';
+      var cls = c[0] === 'date' ? ' class="hide-sm"' : '';
+      return '<th scope="col"' + aria + cls + '>' + (sortable ? '<button type="button" data-sort="' + c[0] + '">' + c[1] + (active ? '<span class="arr">' + (S.sort[1] > 0 ? '▲' : '▼') + '</span>' : '') + '</button>' : c[1]) + '</th>';
+    }).join('') + '</tr></thead>';
+    box.innerHTML = list.length
+      ? '<table class="tbl">' + head + '<tbody>' + shown.map(rowHtml).join('') + '</tbody></table>' + (list.length > S.limit ? '<div class="more"><button class="btn" type="button" id="more">显示全部 ' + list.length + ' 只</button></div>' : '')
+      : '<p class="empty">没有符合条件的基金。</p>';
+    $('count').textContent = '共 ' + list.length + ' 只' + (list.length > S.limit ? '，先显示 ' + S.limit + ' 只' : '');
+    box.querySelectorAll('[data-sort]').forEach(function (b) {
+      b.onclick = function () { var k = b.dataset.sort; S.sort = S.sort[0] === k ? [k, -S.sort[1]] : [k, k === 'date' ? -1 : -1]; renderList(); };
+    });
+    if ($('more')) $('more').onclick = function () { S.limit = 1e9; renderList(); };
+    box.querySelectorAll('tr.detail').forEach(function (tr) { drawHistory(tr.firstChild, byCode(tr.dataset.for)); });
+    box.querySelectorAll('tr.has-h').forEach(function (tr) {
+      tr.onclick = function (e) { if (e.target.closest('a')) return; toggle(tr.dataset.code); };
+      tr.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(tr.dataset.code); } };
+    });
+  }
+  function byCode(code) { return funds().filter(function (f) { return f.code === code; })[0]; }
+  function toggle(code) {
+    S.open[code] = !S.open[code]; renderList();
+    var tr = document.querySelector('tr.row[data-code="' + code + '"]'); if (tr) tr.focus({ preventScroll: true });
+  }
+
+  function niceTicks(lo, hi, count) {
+    var raw = (hi - lo) / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / mag;
+    var step = (n >= 5 ? 10 : n >= 2 ? 5 : n >= 1.5 ? 2 : 1) * mag, out = [];
+    for (var v = Math.ceil(lo / step) * step; v <= hi + step / 1e6; v += step) out.push(+v.toPrecision(10));
+    return { ticks: out, step: step };
+  }
+
+  /* ---------- 近 10 日溢价走势 ---------- */
+  function drawHistory(td, f) {
+    var h = f.premiumHistory, c = costs();
+    td.innerHTML = '<div class="dh"><span>近 ' + h.length + ' 个交易日溢价率</span><span>灰色带是成本区间（' + pct(-c.d) + ' 至 ' + pct(c.p) + '）</span></div><div class="hchart"></div>';
+    var box = td.querySelector('.hchart'), w = Math.max(260, box.clientWidth), H = 180, m = { t: 10, r: 12, b: 26, l: 48 };
+    var v = h.map(function (x) { return x.premiumRate; });
+    var lo = Math.min.apply(null, v.concat([-c.d, 0])), hi = Math.max.apply(null, v.concat([c.p, 0]));
+    var pad = (hi - lo) * 0.12 || 0.5; lo -= pad; hi += pad;
+    var X = function (i) { return m.l + i / (v.length - 1) * (w - m.l - m.r); }, Y = function (x) { return m.t + (hi - x) / (hi - lo) * (H - m.t - m.b); };
+    var nt = niceTicks(lo, hi, 4), step = nt.step, s = '<svg viewBox="0 0 ' + w + ' ' + H + '" height="' + H + '" role="img" aria-label="' + esc(f.name) + ' 近 ' + h.length + ' 日溢价率">';
+    s += '<rect class="band" x="' + m.l + '" width="' + (w - m.l - m.r) + '" y="' + Y(c.p) + '" height="' + (Y(-c.d) - Y(c.p)) + '"/>';
+    nt.ticks.forEach(function (t) { s += '<line class="gridl" x1="' + m.l + '" x2="' + (w - m.r) + '" y1="' + Y(t) + '" y2="' + Y(t) + '"/><text class="axis" x="' + (m.l - 8) + '" y="' + (Y(t) + 4) + '" text-anchor="end" fill="var(--ink-3)" font-size="11.5">' + (Math.abs(t) < 1e-9 ? '0' : pct(t, step < 0.1 ? 2 : step < 1 ? 1 : 0)) + '</text>'; });
+    s += '<line class="base" x1="' + m.l + '" x2="' + (w - m.r) + '" y1="' + Y(0) + '" y2="' + Y(0) + '"/>';
+    s += '<g class="axis"><text x="' + X(0) + '" y="' + (H - 6) + '">' + esc(h[0].date) + '</text><text x="' + X(v.length - 1) + '" y="' + (H - 6) + '" text-anchor="end">' + esc(h[h.length - 1].date) + '</text></g>';
+    s += '<path class="line" d="' + v.map(function (x, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(x).toFixed(1); }).join('') + '"/>';
+    s += v.map(function (x, i) { return '<circle class="dot" cx="' + X(i).toFixed(1) + '" cy="' + Y(x).toFixed(1) + '" r="' + (i === v.length - 1 ? 4.5 : 3) + '"/>'; }).join('');
+    s += '<line class="cross" y1="' + m.t + '" y2="' + (H - m.b) + '" style="display:none"/><rect x="' + (m.l - 6) + '" y="0" width="' + (w - m.l - m.r + 12) + '" height="' + (H - m.b) + '" fill="transparent" class="hit"/></svg>';
+    box.innerHTML = s;
+    var svg = box.firstChild, cross = svg.querySelector('.cross'), hit = svg.querySelector('.hit');
+    hit.addEventListener('pointermove', function (e) {
+      var r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * (w / r.width), k = 0;
+      v.forEach(function (x, i) { if (Math.abs(X(i) - px) < Math.abs(X(k) - px)) k = i; });
+      cross.setAttribute('x1', X(k)); cross.setAttribute('x2', X(k)); cross.style.display = '';
+      var p = h[k];
+      showTip('<b>' + pct(p.premiumRate) + '</b><span>' + esc(p.date) + '</span><span>收盘 ' + num(p.price, 3) + ' · 净值 ' + num(p.nav, 4) + '</span>', e.clientX, e.clientY);
+    });
+    hit.addEventListener('pointerleave', function () { cross.style.display = 'none'; hideTip(); });
+  }
+
+  /* ---------- 其它交互 ---------- */
+  document.addEventListener('click', function (e) {
+    var find = e.target.closest('[data-find]');
+    if (!find) return;
+    var f = byCode(find.dataset.find);
+    S.view = 'all'; S.type = 'all'; S.range = null; S.q = f.code; S.sort = ['prem', -1];
+    if (f.premiumHistory && f.premiumHistory.length > 1) S.open[f.code] = true;
+    renderControls(); renderList();
+    var tr = document.querySelector('tr.row[data-code="' + f.code + '"]');
+    if (tr) { tr.scrollIntoView({ block: 'center', behavior: 'smooth' }); tr.classList.add('flash'); }
+  });
+  $('refresh').onclick = function () { load(true); };
+  var lastW = innerWidth, rt = 0;
+  addEventListener('resize', function () {
+    if (innerWidth === lastW || !S.d) return; lastW = innerWidth; clearTimeout(rt);
+    rt = setTimeout(function () { drawHist(funds(), costs()); document.querySelectorAll('tr.detail').forEach(function (tr) { drawHistory(tr.firstChild, byCode(tr.dataset.for)); }); }, 120);
+  });
+  load(false);
+})();
 </script>
 </body>
 </html>`;
 
 /**
- * 管理页面
+ * 管理页面：手动推进一轮分批计算
  */
 export const ADMIN_PAGE = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LOF数据更新</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>LOF 数据更新</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0d1117;--bg2:#161b22;--fg:#e6edf3;--fg2:#8b949e;--border:#30363d;--blue:#58a6ff;--green:#3fb950;--red:#f85149}
-body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;display:flex;justify-content:center;align-items:center}
-.c{max-width:360px;width:100%;padding:16px}
-h1{font-size:1.1rem;margin-bottom:16px;text-align:center}
-.p{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px}
-.btn{width:100%;background:var(--blue);color:#fff;border:none;border-radius:5px;padding:10px;font-size:0.9rem;cursor:pointer;font-weight:500}
-.btn:hover{opacity:0.9}.btn:disabled{background:#6e7681;cursor:not-allowed}
-.pg{margin-top:14px;display:none}.pg.show{display:block}
-.bar{height:5px;background:var(--border);border-radius:3px;overflow:hidden}
-.fill{height:100%;background:var(--green);transition:width 0.3s;width:0%}
-.txt{font-size:0.75rem;color:var(--fg2);margin-top:8px;text-align:center}
-.st{margin-top:12px;padding:8px;border-radius:5px;font-size:0.75rem;display:none}
-.st.ok{display:block;background:rgba(63,185,80,0.15);color:var(--green)}
-.st.er{display:block;background:rgba(248,81,73,0.15);color:var(--red)}
-.bk{display:block;text-align:center;margin-top:14px;color:var(--blue);text-decoration:none;font-size:0.8rem}
-.bk:hover{text-decoration:underline}
-@media(prefers-color-scheme:light){:root{--bg:#f6f8fa;--bg2:#fff;--fg:#1f2328;--fg2:#656d76;--border:#d0d7de;--green:#1a7f37;--red:#cf222e}}
+${TOKENS}
+main { max-width: 420px; margin: 0 auto; padding: clamp(48px, 12vh, 120px) 20px; }
+h1 { margin: 0 0 6px; font-size: 22px; font-weight: 650; }
+p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.panel { margin-top: 28px; display: grid; gap: 14px; }
+.btn.primary { height: 40px; background: var(--ink); color: var(--bg); border-color: var(--ink); font-size: 14.5px; }
+.progress { height: 6px; border-radius: 3px; background: var(--bg-3); overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--series); border-radius: 3px; transition: width .3s; }
+.status { font-size: 13.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; min-height: 1.6em; }
+.status.err { color: var(--prem); }
+.back { font-size: 13.5px; color: var(--ink-2); }
 </style>
 </head>
 <body>
-<div class="c">
-<h1>LOF数据更新</h1>
-<div class="p">
-<button class="btn" id="btn">开始更新</button>
-<div class="pg" id="pg"><div class="bar"><div class="fill" id="fl"></div></div><div class="txt" id="tx">准备中...</div></div>
-<div class="st" id="st"></div>
+<main>
+<h1>LOF 数据更新</h1>
+<p>手动把一轮分批计算跑完。平时由定时任务每 2 分钟推进一批，不需要手动操作。</p>
+<div class="panel">
+  <button class="btn primary" id="btn" type="button">开始更新</button>
+  <div class="progress" aria-hidden="true"><i id="fill"></i></div>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+  <a class="back" href="/">返回首页</a>
 </div>
-<a href="/" class="bk">← 返回</a>
-</div>
+</main>
 <script>
-const $=id=>document.getElementById(id);
-let run=false;
-$('btn').onclick=async()=>{
-if(run)return;run=true;
-const btn=$('btn'),pg=$('pg'),fl=$('fl'),tx=$('tx'),st=$('st');
-btn.disabled=true;btn.textContent='更新中...';pg.classList.add('show');st.className='st';fl.style.width='0%';tx.textContent='初始化...';
-try{
-await fetch('/batch/start');
-let go=true;
-while(go){
-const r=await fetch('/batch/next');const p=await r.json();
-const pct=p.totalFunds>0?Math.round(p.processedFunds/p.totalFunds*100):0;
-fl.style.width=pct+'%';tx.textContent=p.processedFunds+'/'+p.totalFunds+' ('+pct+'%)';
-if(p.status==='completed'){fl.style.width='100%';tx.textContent='完成';st.className='st ok';st.textContent='✓ 成功 '+p.successCount+' 只';go=false;}
-else if(p.status==='error'){st.className='st er';st.textContent='✗ '+(p.error||'错误');go=false;}
-else if(p.status!=='running'){go=false;}
-if(go)await new Promise(r=>setTimeout(r,100));
-}
-}catch(e){st.className='st er';st.textContent='✗ '+e.message;}
-finally{btn.disabled=false;btn.textContent='重新更新';run=false;}
-};
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var running = false;
+  $('btn').onclick = function () {
+    if (running) return;
+    running = true;
+    var btn = $('btn'), fill = $('fill'), st = $('status');
+    btn.disabled = true; btn.textContent = '更新中'; st.className = 'status'; st.textContent = '开始一轮新的计算'; fill.style.width = '0%';
+    fetch('/batch/start').then(function () {
+      function step() {
+        return fetch('/batch/next').then(function (r) { return r.json(); }).then(function (p) {
+          var pct = p.totalFunds > 0 ? Math.round(p.processedFunds / p.totalFunds * 100) : 0;
+          fill.style.width = pct + '%';
+          st.textContent = p.processedFunds + ' / ' + p.totalFunds + ' 只 · ' + pct + '%';
+          if (p.status === 'completed') { fill.style.width = '100%'; st.textContent = '完成，成功 ' + p.successCount + ' 只'; return; }
+          if (p.status === 'error') { throw new Error(p.error || '计算出错'); }
+          if (p.status !== 'running') return;
+          return new Promise(function (r) { setTimeout(r, 100); }).then(step);
+        });
+      }
+      return step();
+    }).catch(function (e) { st.className = 'status err'; st.textContent = e.message; })
+      .then(function () { running = false; btn.disabled = false; btn.textContent = '重新更新'; });
+  };
+})();
 </script>
 </body>
 </html>`;
