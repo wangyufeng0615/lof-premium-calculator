@@ -5,6 +5,11 @@ export default defineConfig({
 		name: "lof-premium-calculator",
 		compatibilityDate: "2024-12-01",
 		entrypoint: "src/index.ts",
+		observability: {
+			issues: {
+				enabled: true,
+			},
+		},
 		triggers: [
 			triggers.scheduled({
 				schedule: "*/2 * * * *",
