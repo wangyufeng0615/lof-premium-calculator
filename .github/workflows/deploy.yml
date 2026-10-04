@@ -31,9 +31,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           DO_NOT_TRACK: "1"
 
-      - name: Warm up cache
+      - name: Smoke check
         run: |
           sleep 5
-          curl -s "https://lof-premium-calculator.wangyufeng.workers.dev/calculate?top=100" | head -c 200
+          # /calculate 会开一轮新的分批计算，这里只读缓存确认服务可用
+          curl -s "https://lof-premium-calculator.wangyufeng.workers.dev/data?top=1" | head -c 200
           echo ""
-          echo "Cache warmed up successfully"
