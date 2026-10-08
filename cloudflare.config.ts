@@ -12,7 +12,8 @@ export default defineConfig({
 		},
 		triggers: [
 			triggers.scheduled({
-				schedule: "*/2 * * * *",
+				// 交易日北京时间 14:00–15:58（UTC 06:00–07:58）每 2 分钟一次，一天一轮，收盘前出结果
+				schedule: "*/2 6-7 * * MON-FRI",
 			}),
 		],
 		env: {

@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## Project Overview
 
-LOF基金溢价率计算工具 - A Cloudflare Workers service for calculating premium rates of LOF (Listed Open-end Fund) funds in China. A cron trigger every 2 minutes advances a KV-backed batch calculation (Workers Free allows only 50 subrequests per invocation, so a full run cannot fit in one request).
+LOF基金溢价率计算工具 - A Cloudflare Workers service for calculating premium rates of LOF (Listed Open-end Fund) funds in China. A cron trigger every 2 minutes during 14:00–16:00 Beijing time on weekdays advances a KV-backed batch calculation (one round per trading day) (Workers Free allows only 50 subrequests per invocation, so a full run cannot fit in one request).
 
 ## Development Commands
 

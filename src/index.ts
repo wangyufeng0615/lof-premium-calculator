@@ -8,8 +8,8 @@
  * - GET /health     健康检查
  *
  * 定时任务:
- * - 每 2 分钟一次（见 cloudflare.config.ts），推进分批计算；缓存超过 6 小时
- *   开新一轮。Workers 免费版单次调用最多 50 个子请求，全量计算只能分批完成。
+ * - 交易日北京时间 14:00–16:00 每 2 分钟一次（见 cloudflare.config.ts），推进分批计算；
+ *   缓存超过 6 小时开新一轮，所以每个交易日只算一轮。Workers 免费版单次调用最多 50 个子请求，全量计算只能分批完成。
  */
 
 import type { Env, CachedData } from './types';
@@ -135,7 +135,7 @@ function handleApiInfo(headers: Record<string, string>): Response {
       top: '返回前N只基金 (默认20)',
       format: '返回格式 json/text (默认json)',
     },
-    cron: '每 2 分钟推进一批分批计算，缓存超过 6 小时自动开新一轮',
+    cron: '交易日北京时间 14:00–16:00 每 2 分钟推进一批，每天自动算一轮',
   };
 
   return new Response(JSON.stringify(info, null, 2), {

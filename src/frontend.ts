@@ -205,7 +205,7 @@ tr.detail td:first-child { padding-left: 16px; }
   <div class="wrap"><div class="state" id="boot"><p>正在读取数据…</p></div></div>
 </main>
 <footer class="foot"><div class="wrap">
-  <p>市价与列表来自新浪行情，基金净值来自东方财富；约每 6 小时重新计算一轮。</p>
+  <p>市价与列表来自新浪行情，基金净值来自东方财富；每个交易日北京时间 14:00 起重新计算一轮，约 1 小时算完。</p>
   <p>溢价率 = (净值日收盘价 − 单位净值) / 单位净值。扣费后按溢价套利成本 0.16%、折价套利成本 0.51% 估算，未检查申购赎回状态、限额与成交量。仅供研究，不构成投资建议。</p>
 </div></footer>
 <div class="tip" id="tip" role="tooltip" hidden></div>
